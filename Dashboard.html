@@ -1,0 +1,245 @@
+<!-- Dashboard Page -->
+<div class="dashboard-page">
+  <!-- Filters -->
+  <div class="filters">
+    <div class="filter-group">
+      <label for="filter-site">Site</label>
+      <select id="filter-site" class="form-select">
+        <option value="ALL">All Sites</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="filter-cohort">Cohort</label>
+      <select id="filter-cohort" class="form-select">
+        <option value="">All Cohorts</option>
+      </select>
+    </div>
+    <div class="filter-group">
+      <label for="filter-status">Status</label>
+      <select id="filter-status" class="form-select">
+        <option value="">All Statuses</option>
+        <option value="Active">Active</option>
+        <option value="Withdrawn">Withdrawn</option>
+        <option value="Completed">Completed</option>
+      </select>
+    </div>
+    <div class="filter-group" style="display: flex; align-items: flex-end;">
+      <button id="btn-apply-filters" class="btn btn-primary">Apply Filters</button>
+    </div>
+    <div class="filter-group" style="display: flex; align-items: flex-end;">
+      <button id="btn-export" class="btn btn-secondary">Export CSV</button>
+    </div>
+  </div>
+
+  <!-- Statistics Cards -->
+  <div class="stats-grid" id="stats-grid">
+    <!-- Stats will be loaded here -->
+  </div>
+
+  <!-- Top Missing Instruments -->
+  <div class="card" id="top-missing-card" style="display: none;">
+    <h2 class="card-title">Top 5 Missing Instruments</h2>
+    <div id="top-missing-list"></div>
+  </div>
+
+  <!-- Participants Table -->
+  <div class="card">
+    <h2 class="card-title">Participants</h2>
+    <div class="table-container">
+      <table id="participants-table">
+        <thead>
+          <tr>
+            <th>Participant ID</th>
+            <th>Site</th>
+            <th>Cohort</th>
+            <th>Status</th>
+            <th>Completion</th>
+            <th>Missing</th>
+            <th>Last Updated</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="participants-tbody">
+          <!-- Rows will be loaded here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  let dashboardData = null;
+
+  function initDashboard(params) {
+    // Set filters from params or state
+    const filters = params || APP_STATE.currentFilters || {};
+
+    // Load dashboard data
+    loadDashboardData(filters);
+
+    // Setup event listeners
+    document.getElementById('btn-apply-filters').addEventListener('click', function() {
+      const filters = {
+        site: document.getElementById('filter-site').value,
+        cohort: document.getElementById('filter-cohort').value,
+        status: document.getElementById('filter-status').value
+      };
+
+      APP_STATE.currentFilters = filters;
+      loadDashboardData(filters);
+    });
+
+    document.getElementById('btn-export').addEventListener('click', function() {
+      exportParticipantsData();
+    });
+  }
+
+  function loadDashboardData(filters) {
+    document.getElementById('stats-grid').innerHTML = '<div class="loading">Loading statistics...</div>';
+    document.getElementById('participants-tbody').innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        dashboardData = data;
+        renderDashboard(data);
+      })
+      .withFailureHandler(handleError)
+      .getDashboardStats(filters);
+  }
+
+  function renderDashboard(data) {
+    // Update site filter if user has ALL access
+    const siteFilter = document.getElementById('filter-site');
+    if (data.user.site_scope === 'ALL') {
+      siteFilter.innerHTML = '<option value="ALL">All Sites</option><option value="UGA">UGA</option><option value="MIZZOU">MIZZOU</option>';
+      if (APP_STATE.currentFilters && APP_STATE.currentFilters.site) {
+        siteFilter.value = APP_STATE.currentFilters.site;
+      }
+    } else {
+      siteFilter.innerHTML = '<option value="' + data.user.site_scope + '">' + data.user.site_scope + '</option>';
+      siteFilter.disabled = true;
+    }
+
+    // Populate cohort filter
+    const cohortFilter = document.getElementById('filter-cohort');
+    let cohortOptions = '<option value="">All Cohorts</option>';
+    data.cohorts.forEach(cohort => {
+      cohortOptions += '<option value="' + cohort + '">' + cohort + '</option>';
+    });
+    cohortFilter.innerHTML = cohortOptions;
+    if (APP_STATE.currentFilters && APP_STATE.currentFilters.cohort) {
+      cohortFilter.value = APP_STATE.currentFilters.cohort;
+    }
+
+    // Populate status filter
+    if (APP_STATE.currentFilters && APP_STATE.currentFilters.status) {
+      document.getElementById('filter-status').value = APP_STATE.currentFilters.status;
+    }
+
+    // Render statistics
+    renderStats(data.stats);
+
+    // Render participants table
+    renderParticipantsTable(data.participants, data.user.can_view_names);
+  }
+
+  function renderStats(stats) {
+    const statsGrid = document.getElementById('stats-grid');
+
+    statsGrid.innerHTML = `
+      <div class="stat-card">
+        <div class="stat-value">${stats.total_participants}</div>
+        <div class="stat-label">Total Participants</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${stats.fully_complete}</div>
+        <div class="stat-label">Fully Complete (19/19)</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${stats.fully_complete_percent}%</div>
+        <div class="stat-label">% Fully Complete</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${stats.avg_completion}%</div>
+        <div class="stat-label">Avg Completion</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value">${stats.total_missing}</div>
+        <div class="stat-label">Total Missing Items</div>
+      </div>
+    `;
+
+    // Render top missing instruments
+    if (stats.top_missing && stats.top_missing.length > 0) {
+      document.getElementById('top-missing-card').style.display = 'block';
+      let html = '<table><thead><tr><th>Instrument</th><th>Missing Count</th></tr></thead><tbody>';
+
+      stats.top_missing.forEach(item => {
+        html += `<tr><td>${item.instrument_name}</td><td><span class="badge badge-danger">${item.missing_count}</span></td></tr>`;
+      });
+
+      html += '</tbody></table>';
+      document.getElementById('top-missing-list').innerHTML = html;
+    } else {
+      document.getElementById('top-missing-card').style.display = 'none';
+    }
+  }
+
+  function renderParticipantsTable(participants, showNames) {
+    const tbody = document.getElementById('participants-tbody');
+
+    if (participants.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No participants found</td></tr>';
+      return;
+    }
+
+    let html = '';
+    participants.forEach(p => {
+      const statusClass = p.status === 'Active' ? 'badge-success' :
+                          p.status === 'Withdrawn' ? 'badge-danger' : 'badge-info';
+
+      const completionClass = p.completion_percent === 100 ? 'high' :
+                              p.completion_percent >= 50 ? 'medium' : 'low';
+
+      html += `
+        <tr>
+          <td><strong>${p.participant_id}</strong></td>
+          <td>${p.site}</td>
+          <td>${p.cohort || '-'}</td>
+          <td><span class="badge ${statusClass}">${p.status}</span></td>
+          <td>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <div class="progress" style="flex: 1;">
+                <div class="progress-bar ${completionClass}" style="width: ${p.completion_percent}%"></div>
+              </div>
+              <span style="font-size: 13px; white-space: nowrap;">${p.completion_percent}%</span>
+            </div>
+          </td>
+          <td><span class="badge badge-warning">${p.missing_count}</span></td>
+          <td style="font-size: 12px;">${formatDateShort(p.last_updated)}</td>
+          <td>
+            <button class="btn btn-primary btn-small" onclick="openParticipant('${p.participant_id}')">Open</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  function openParticipant(participantId) {
+    navigateTo('participant-detail', { participantId: participantId });
+  }
+
+  function exportParticipantsData() {
+    const filters = APP_STATE.currentFilters || {};
+
+    google.script.run
+      .withSuccessHandler(function(csvData) {
+        downloadCSV(csvData, 'g4g_participants_' + new Date().toISOString().split('T')[0] + '.csv');
+        showToast('Participants exported successfully', 'success');
+      })
+      .withFailureHandler(handleError)
+      .exportParticipants(filters);
+  }
+</script>

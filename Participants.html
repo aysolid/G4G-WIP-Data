@@ -1,0 +1,212 @@
+<!-- Participants List Page -->
+<div class="participants-page">
+  <div class="card">
+    <h2 class="card-title">All Participants</h2>
+
+    <!-- Search and Filters -->
+    <div style="display: flex; gap: 12px; margin-bottom: 20px; flex-wrap: wrap;">
+      <div style="flex: 1; min-width: 200px;">
+        <input
+          type="text"
+          id="search-participant"
+          class="form-input"
+          placeholder="Search by Participant ID..."
+        />
+      </div>
+      <div style="min-width: 150px;">
+        <select id="filter-site-participants" class="form-select">
+          <option value="ALL">All Sites</option>
+        </select>
+      </div>
+      <div style="min-width: 150px;">
+        <select id="filter-status-participants" class="form-select">
+          <option value="">All Statuses</option>
+          <option value="Active">Active</option>
+          <option value="Withdrawn">Withdrawn</option>
+          <option value="Completed">Completed</option>
+        </select>
+      </div>
+      <button id="btn-search-participants" class="btn btn-primary">Search</button>
+      <button id="btn-export-participants" class="btn btn-secondary">Export</button>
+    </div>
+
+    <!-- Participants Table -->
+    <div class="table-container">
+      <table id="participants-list-table">
+        <thead>
+          <tr>
+            <th>Participant ID</th>
+            <th>Site</th>
+            <th>Cohort</th>
+            <th>Status</th>
+            <th>Enrolled</th>
+            <th>Completion %</th>
+            <th>Missing Items</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="participants-list-tbody">
+          <!-- Rows will be loaded here -->
+        </tbody>
+      </table>
+    </div>
+
+    <div id="participants-count" class="text-muted mt-2" style="font-size: 14px;"></div>
+  </div>
+
+  <!-- Missing Items Detail (expandable) -->
+  <div class="card" id="missing-items-detail" style="display: none;">
+    <h2 class="card-title">Missing Items for <span id="detail-participant-id"></span></h2>
+    <div id="missing-items-list"></div>
+    <button class="btn btn-secondary mt-2" onclick="closeMissingDetail()">Close</button>
+  </div>
+</div>
+
+<script>
+  let participantsList = [];
+
+  function initParticipants(params) {
+    loadParticipantsList();
+
+    // Setup event listeners
+    document.getElementById('btn-search-participants').addEventListener('click', function() {
+      loadParticipantsList();
+    });
+
+    document.getElementById('search-participant').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        loadParticipantsList();
+      }
+    });
+
+    document.getElementById('btn-export-participants').addEventListener('click', function() {
+      exportParticipantsList();
+    });
+  }
+
+  function loadParticipantsList() {
+    const filters = {
+      search: document.getElementById('search-participant').value,
+      site: document.getElementById('filter-site-participants').value,
+      status: document.getElementById('filter-status-participants').value
+    };
+
+    document.getElementById('participants-list-tbody').innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+
+    google.script.run
+      .withSuccessHandler(function(data) {
+        participantsList = data.participants;
+        renderParticipantsList(data);
+
+        // Update site filter
+        const siteFilter = document.getElementById('filter-site-participants');
+        if (data.user.site_scope === 'ALL') {
+          siteFilter.innerHTML = '<option value="ALL">All Sites</option><option value="UGA">UGA</option><option value="MIZZOU">MIZZOU</option>';
+          if (filters.site) {
+            siteFilter.value = filters.site;
+          }
+        } else {
+          siteFilter.innerHTML = '<option value="' + data.user.site_scope + '">' + data.user.site_scope + '</option>';
+          siteFilter.disabled = true;
+        }
+      })
+      .withFailureHandler(handleError)
+      .getDashboardStats(filters);
+  }
+
+  function renderParticipantsList(data) {
+    const tbody = document.getElementById('participants-list-tbody');
+    const participants = data.participants;
+
+    if (participants.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No participants found</td></tr>';
+      document.getElementById('participants-count').textContent = '';
+      return;
+    }
+
+    let html = '';
+    participants.forEach(p => {
+      const statusClass = p.status === 'Active' ? 'badge-success' :
+                          p.status === 'Withdrawn' ? 'badge-danger' : 'badge-info';
+
+      html += `
+        <tr>
+          <td><strong>${p.participant_id}</strong></td>
+          <td>${p.site}</td>
+          <td>${p.cohort || '-'}</td>
+          <td><span class="badge ${statusClass}">${p.status}</span></td>
+          <td style="font-size: 12px;">${formatDateShort(p.enroll_date)}</td>
+          <td>
+            <span class="badge ${p.completion_percent === 100 ? 'badge-success' : 'badge-warning'}">
+              ${p.completion_percent}%
+            </span>
+          </td>
+          <td>
+            ${p.missing_count > 0 ?
+              '<a href="#" onclick="showMissingItems(\'' + p.participant_id + '\'); return false;" class="badge badge-danger" style="text-decoration: underline;">' + p.missing_count + ' missing</a>' :
+              '<span class="badge badge-success">Complete</span>'
+            }
+          </td>
+          <td>
+            <button class="btn btn-primary btn-small" onclick="openParticipantFromList('${p.participant_id}')">Open</button>
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+    document.getElementById('participants-count').textContent = `Showing ${participants.length} participant(s)`;
+  }
+
+  function openParticipantFromList(participantId) {
+    navigateTo('participant-detail', { participantId: participantId });
+  }
+
+  function showMissingItems(participantId) {
+    google.script.run
+      .withSuccessHandler(function(detail) {
+        const missingCompletions = detail.completions.filter(c => !c.is_complete);
+
+        if (missingCompletions.length === 0) {
+          showToast('No missing items', 'info');
+          return;
+        }
+
+        document.getElementById('detail-participant-id').textContent = participantId;
+
+        let html = '<ol style="padding-left: 20px; line-height: 2;">';
+        missingCompletions.forEach(c => {
+          html += '<li>' + c.instrument_name + '</li>';
+        });
+        html += '</ol>';
+
+        document.getElementById('missing-items-list').innerHTML = html;
+        document.getElementById('missing-items-detail').style.display = 'block';
+
+        // Scroll to detail
+        document.getElementById('missing-items-detail').scrollIntoView({ behavior: 'smooth' });
+      })
+      .withFailureHandler(handleError)
+      .getParticipantDetail(participantId);
+  }
+
+  function closeMissingDetail() {
+    document.getElementById('missing-items-detail').style.display = 'none';
+  }
+
+  function exportParticipantsList() {
+    const filters = {
+      search: document.getElementById('search-participant').value,
+      site: document.getElementById('filter-site-participants').value,
+      status: document.getElementById('filter-status-participants').value
+    };
+
+    google.script.run
+      .withSuccessHandler(function(csvData) {
+        downloadCSV(csvData, 'g4g_participants_' + new Date().toISOString().split('T')[0] + '.csv');
+        showToast('Participants exported successfully', 'success');
+      })
+      .withFailureHandler(handleError)
+      .exportParticipants(filters);
+  }
+</script>

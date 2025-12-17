@@ -1,0 +1,358 @@
+<!-- Participant Detail Page -->
+<div class="participant-detail-page">
+  <!-- Header Card -->
+  <div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 16px;">
+      <div style="flex: 1;">
+        <h2 class="card-title" style="margin-bottom: 8px;">
+          <span id="detail-participant-id"></span>
+          <span id="detail-participant-name" style="color: var(--text-secondary); font-size: 18px; font-weight: 400;"></span>
+        </h2>
+        <div style="display: flex; gap: 16px; flex-wrap: wrap; margin-top: 12px;">
+          <div>
+            <span class="text-muted" style="font-size: 13px;">Site:</span>
+            <strong id="detail-site"></strong>
+          </div>
+          <div>
+            <span class="text-muted" style="font-size: 13px;">Cohort:</span>
+            <strong id="detail-cohort"></strong>
+          </div>
+          <div>
+            <span class="text-muted" style="font-size: 13px;">Status:</span>
+            <span id="detail-status-badge"></span>
+          </div>
+          <div>
+            <span class="text-muted" style="font-size: 13px;">Enrolled:</span>
+            <span id="detail-enroll-date"></span>
+          </div>
+        </div>
+      </div>
+
+      <div style="text-align: right;">
+        <div style="margin-bottom: 12px;">
+          <div style="font-size: 36px; font-weight: 700; color: var(--primary-color);" id="detail-completion-percent">0%</div>
+          <div class="text-muted" style="font-size: 13px;">Completion</div>
+        </div>
+        <div class="progress" style="width: 200px; height: 12px;">
+          <div class="progress-bar" id="detail-progress-bar" style="width: 0%"></div>
+        </div>
+        <div style="margin-top: 8px;">
+          <span class="badge badge-warning" id="detail-missing-badge"></span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Status Management (for authorized users) -->
+    <div id="status-management" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border-color); display: none;">
+      <div style="display: flex; gap: 12px; align-items: center;">
+        <label style="font-weight: 500;">Update Status:</label>
+        <select id="update-status-select" class="form-select" style="width: auto;">
+          <option value="Active">Active</option>
+          <option value="Withdrawn">Withdrawn</option>
+          <option value="Completed">Completed</option>
+        </select>
+        <button class="btn btn-primary btn-small" onclick="updateParticipantStatus()">Update</button>
+      </div>
+    </div>
+
+    <!-- Export Button -->
+    <div style="margin-top: 16px;">
+      <button class="btn btn-secondary btn-small" onclick="exportParticipantChecklist()">
+        Export Checklist CSV
+      </button>
+      <button class="btn btn-secondary btn-small" onclick="navigateTo('dashboard')">
+        Back to Dashboard
+      </button>
+    </div>
+  </div>
+
+  <!-- Checklist Card -->
+  <div class="card">
+    <h2 class="card-title">Protocol Checklist (19 Required Instruments)</h2>
+
+    <div class="table-container">
+      <table id="checklist-table">
+        <thead>
+          <tr>
+            <th style="width: 50px;">#</th>
+            <th>Instrument</th>
+            <th style="width: 100px;">Status</th>
+            <th style="width: 120px;">Link</th>
+            <th style="width: 150px;">Completed</th>
+            <th style="width: 200px;">Response Ref</th>
+            <th style="width: 100px;">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="checklist-tbody">
+          <!-- Rows will be loaded here -->
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Notes Section -->
+  <div class="card">
+    <h2 class="card-title">Notes</h2>
+    <textarea id="participant-notes" class="form-textarea" placeholder="General notes about this participant..." disabled></textarea>
+    <button class="btn btn-primary btn-small mt-2" onclick="saveParticipantNotes()" style="display: none;" id="btn-save-notes">
+      Save Notes
+    </button>
+  </div>
+</div>
+
+<!-- Modal for Completion Details -->
+<div id="completion-modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h3 class="modal-title" id="modal-title">Mark as Complete</h3>
+    </div>
+    <div class="modal-body">
+      <p id="modal-instrument-name" style="font-weight: 500; margin-bottom: 16px;"></p>
+
+      <div class="form-group">
+        <label class="form-label">Response Reference / Confirmation Code (Optional)</label>
+        <input type="text" id="modal-response-ref" class="form-input" placeholder="e.g., Response ID, confirmation code">
+        <span class="form-hint">Enter any reference ID from the external system</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Notes (Optional)</label>
+        <textarea id="modal-notes" class="form-textarea" placeholder="Any notes about this completion..."></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-secondary" onclick="closeCompletionModal()">Cancel</button>
+      <button class="btn btn-success" onclick="confirmCompletion()" id="btn-confirm-completion">Mark Complete</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  let currentParticipant = null;
+  let currentCompletions = [];
+  let currentInstrument = null;
+  let canEdit = false;
+
+  function initParticipantDetail(participantId) {
+    if (!participantId) {
+      showToast('No participant ID provided', 'error');
+      navigateTo('dashboard');
+      return;
+    }
+
+    loadParticipantDetail(participantId);
+  }
+
+  function loadParticipantDetail(participantId) {
+    google.script.run
+      .withSuccessHandler(function(data) {
+        currentParticipant = data.participant;
+        currentCompletions = data.completions;
+
+        renderParticipantDetail(data);
+      })
+      .withFailureHandler(function(error) {
+        handleError(error);
+        setTimeout(() => navigateTo('dashboard'), 2000);
+      })
+      .getParticipantDetail(participantId);
+  }
+
+  function renderParticipantDetail(data) {
+    const p = data.participant;
+    const completions = data.completions;
+
+    // Header
+    document.getElementById('detail-participant-id').textContent = p.participant_id;
+
+    if (p.participant_name) {
+      document.getElementById('detail-participant-name').textContent = ' (' + p.participant_name + ')';
+    }
+
+    document.getElementById('detail-site').textContent = p.site;
+    document.getElementById('detail-cohort').textContent = p.cohort || '-';
+    document.getElementById('detail-enroll-date').textContent = formatDateShort(p.enroll_date);
+
+    const statusClass = p.status === 'Active' ? 'badge-success' :
+                        p.status === 'Withdrawn' ? 'badge-danger' : 'badge-info';
+    document.getElementById('detail-status-badge').innerHTML = '<span class="badge ' + statusClass + '">' + p.status + '</span>';
+
+    // Completion stats
+    document.getElementById('detail-completion-percent').textContent = p.completion_percent + '%';
+    document.getElementById('detail-missing-badge').textContent = p.missing_count + ' missing';
+
+    const progressBar = document.getElementById('detail-progress-bar');
+    progressBar.style.width = p.completion_percent + '%';
+    progressBar.className = 'progress-bar ' + (p.completion_percent === 100 ? 'high' : p.completion_percent >= 50 ? 'medium' : 'low');
+
+    // Status management (check if user can edit)
+    google.script.run
+      .withSuccessHandler(function(userData) {
+        canEdit = userData.user.can_edit;
+
+        if (canEdit) {
+          document.getElementById('status-management').style.display = 'block';
+          document.getElementById('update-status-select').value = p.status;
+        }
+      })
+      .getDashboardStats({});
+
+    // Checklist
+    renderChecklist(completions);
+
+    // Notes
+    document.getElementById('participant-notes').value = p.notes || '';
+  }
+
+  function renderChecklist(completions) {
+    const tbody = document.getElementById('checklist-tbody');
+    let html = '';
+
+    completions.forEach((c, index) => {
+      const isComplete = c.is_complete;
+      const rowClass = isComplete ? 'checklist-complete' : '';
+
+      html += `
+        <tr class="${rowClass}">
+          <td style="text-align: center; color: var(--text-secondary);">${index + 1}</td>
+          <td>
+            <strong>${c.instrument_name}</strong>
+            ${c.notes ? '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 4px;">' + c.notes + '</div>' : ''}
+          </td>
+          <td>
+            ${isComplete ?
+              '<span class="badge badge-success">✓ Complete</span>' :
+              '<span class="badge badge-warning">Incomplete</span>'
+            }
+          </td>
+          <td>
+            ${c.link ?
+              '<a href="' + c.link + '" target="_blank" class="btn btn-link btn-small">Open Link</a>' :
+              '<span class="text-muted" style="font-size: 12px;">No link</span>'
+            }
+          </td>
+          <td style="font-size: 12px;">
+            ${isComplete ?
+              '<div>' + formatDate(c.completed_at) + '</div><div class="text-muted">' + c.completed_by + '</div>' :
+              '-'
+            }
+          </td>
+          <td style="font-size: 12px;">
+            ${c.response_ref || '-'}
+          </td>
+          <td>
+            ${canEdit ?
+              (isComplete ?
+                '<button class="btn btn-danger btn-small" onclick="markIncomplete(\'' + c.instrument_id + '\')">Undo</button>' :
+                '<button class="btn btn-success btn-small" onclick="openCompletionModal(\'' + c.instrument_id + '\')">Complete</button>'
+              ) :
+              '-'
+            }
+          </td>
+        </tr>
+      `;
+    });
+
+    tbody.innerHTML = html;
+  }
+
+  function openCompletionModal(instrumentId) {
+    const completion = currentCompletions.find(c => c.instrument_id === instrumentId);
+    if (!completion) return;
+
+    currentInstrument = completion;
+
+    document.getElementById('modal-title').textContent = 'Mark as Complete';
+    document.getElementById('modal-instrument-name').textContent = completion.instrument_name;
+    document.getElementById('modal-response-ref').value = completion.response_ref || '';
+    document.getElementById('modal-notes').value = completion.notes || '';
+
+    document.getElementById('completion-modal').classList.add('show');
+  }
+
+  function closeCompletionModal() {
+    document.getElementById('completion-modal').classList.remove('show');
+    currentInstrument = null;
+  }
+
+  function confirmCompletion() {
+    if (!currentInstrument) return;
+
+    const btn = document.getElementById('btn-confirm-completion');
+    btn.disabled = true;
+    btn.textContent = 'Saving...';
+
+    const completionData = {
+      is_complete: true,
+      response_ref: document.getElementById('modal-response-ref').value.trim(),
+      notes: document.getElementById('modal-notes').value.trim()
+    };
+
+    google.script.run
+      .withSuccessHandler(function() {
+        closeCompletionModal();
+        loadParticipantDetail(currentParticipant.participant_id);
+        showToast('Marked as complete', 'success');
+      })
+      .withFailureHandler(function(error) {
+        handleError(error);
+        btn.disabled = false;
+        btn.textContent = 'Mark Complete';
+      })
+      .updateCompletion(currentParticipant.participant_id, currentInstrument.instrument_id, completionData);
+  }
+
+  function markIncomplete(instrumentId) {
+    if (!confirm('Are you sure you want to mark this item as incomplete?')) {
+      return;
+    }
+
+    const completionData = {
+      is_complete: false,
+      response_ref: '',
+      notes: ''
+    };
+
+    google.script.run
+      .withSuccessHandler(function() {
+        loadParticipantDetail(currentParticipant.participant_id);
+        showToast('Marked as incomplete', 'success');
+      })
+      .withFailureHandler(handleError)
+      .updateCompletion(currentParticipant.participant_id, instrumentId, completionData);
+  }
+
+  function updateParticipantStatus() {
+    const newStatus = document.getElementById('update-status-select').value;
+
+    if (!confirm('Update participant status to ' + newStatus + '?')) {
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function() {
+        loadParticipantDetail(currentParticipant.participant_id);
+        showToast('Status updated', 'success');
+      })
+      .withFailureHandler(handleError)
+      .updateParticipantStatus(currentParticipant.participant_id, newStatus, currentParticipant.notes);
+  }
+
+  function exportParticipantChecklist() {
+    google.script.run
+      .withSuccessHandler(function(csvData) {
+        downloadCSV(csvData, 'g4g_checklist_' + currentParticipant.participant_id + '.csv');
+        showToast('Checklist exported', 'success');
+      })
+      .withFailureHandler(handleError)
+      .exportParticipantChecklist(currentParticipant.participant_id);
+  }
+
+  // Close modal when clicking outside
+  document.addEventListener('click', function(e) {
+    const modal = document.getElementById('completion-modal');
+    if (e.target === modal) {
+      closeCompletionModal();
+    }
+  });
+</script>

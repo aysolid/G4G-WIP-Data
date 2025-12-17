@@ -1,0 +1,213 @@
+<!-- Enroll New Participant Page -->
+<div class="enroll-page">
+  <div class="card" style="max-width: 700px; margin: 0 auto;">
+    <h2 class="card-title">Enroll New Participant</h2>
+
+    <form id="enroll-form">
+      <!-- Site Selection -->
+      <div class="form-group">
+        <label class="form-label" for="enroll-site">Site *</label>
+        <select id="enroll-site" class="form-select" required>
+          <!-- Options will be populated based on user access -->
+        </select>
+        <span class="form-hint">Select the site where this participant is enrolling</span>
+      </div>
+
+      <!-- Cohort -->
+      <div class="form-group">
+        <label class="form-label" for="enroll-cohort">Cohort *</label>
+        <input
+          type="text"
+          id="enroll-cohort"
+          class="form-input"
+          placeholder="e.g., Fall 2024, Cohort A"
+          required
+        />
+        <span class="form-hint">Enter the cohort or implementation round identifier</span>
+      </div>
+
+      <!-- Participant Name (optional, only if allowed) -->
+      <div class="form-group" id="enroll-name-group" style="display: none;">
+        <label class="form-label" for="enroll-name">Participant Name (Optional - PII)</label>
+        <input
+          type="text"
+          id="enroll-name"
+          class="form-input"
+          placeholder="Leave blank to maintain anonymity"
+        />
+        <span class="form-hint">⚠️ This field contains PII and will only be visible to authorized roles</span>
+      </div>
+
+      <!-- Notes -->
+      <div class="form-group">
+        <label class="form-label" for="enroll-notes">Notes (Optional)</label>
+        <textarea
+          id="enroll-notes"
+          class="form-textarea"
+          placeholder="Any additional notes about this participant..."
+        ></textarea>
+      </div>
+
+      <!-- Buttons -->
+      <div style="display: flex; gap: 12px; margin-top: 24px;">
+        <button type="submit" class="btn btn-primary" id="btn-enroll-submit">
+          Enroll Participant
+        </button>
+        <button type="button" class="btn btn-secondary" onclick="navigateTo('dashboard')">
+          Cancel
+        </button>
+      </div>
+    </form>
+
+    <!-- Success Message -->
+    <div id="enroll-success" style="display: none; margin-top: 24px; padding: 16px; background: #e6f4ea; border-radius: 4px;">
+      <p style="color: #137333; font-weight: 500; margin-bottom: 8px;">✓ Participant enrolled successfully!</p>
+      <p style="color: #137333; font-size: 14px;">
+        Participant ID: <strong id="success-participant-id"></strong>
+      </p>
+      <p style="color: #137333; font-size: 14px; margin-top: 8px;">
+        All 19 required instruments have been added to the checklist.
+      </p>
+      <button class="btn btn-primary mt-2" id="btn-open-participant">
+        Open Participant Record
+      </button>
+      <button class="btn btn-secondary mt-2" onclick="resetEnrollForm()">
+        Enroll Another
+      </button>
+    </div>
+  </div>
+
+  <!-- Information Card -->
+  <div class="card" style="max-width: 700px; margin: 24px auto 0; background: #e8f0fe;">
+    <h3 style="font-size: 16px; font-weight: 600; margin-bottom: 12px; color: #1967d2;">
+      What happens when you enroll a participant?
+    </h3>
+    <ul style="padding-left: 20px; line-height: 1.8; color: #1967d2;">
+      <li>A unique Participant ID will be generated automatically</li>
+      <li>A checklist of all 19 required instruments will be created</li>
+      <li>You'll be able to mark items as complete during sessions</li>
+      <li>The participant will appear in dashboards and reports</li>
+    </ul>
+  </div>
+</div>
+
+<script>
+  let enrollUserData = null;
+  let newParticipantId = null;
+
+  function initEnroll() {
+    // Use user data from global APP_STATE
+    const user = APP_STATE.user;
+    enrollUserData = user;
+
+    // Load full user capabilities
+    google.script.run
+      .withSuccessHandler(function(data) {
+        if (data && data.user) {
+          enrollUserData = data.user;
+          setupEnrollForm(data.user);
+        } else {
+          // Fallback to APP_STATE if server call fails
+          setupEnrollForm(user);
+        }
+      })
+      .withFailureHandler(function(error) {
+        console.error('Failed to load user data, using APP_STATE:', error);
+        // Fallback to APP_STATE user data
+        setupEnrollForm(user);
+      })
+      .getDashboardStats({});
+
+    // Setup form submission
+    document.getElementById('enroll-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      submitEnrollment();
+    });
+  }
+
+  function setupEnrollForm(user) {
+    const siteSelect = document.getElementById('enroll-site');
+
+    // Populate site dropdown based on user access
+    if (user.site_scope === 'ALL') {
+      siteSelect.innerHTML = '<option value="">-- Select Site --</option><option value="UGA">UGA</option><option value="MIZZOU">MIZZOU</option>';
+    } else {
+      siteSelect.innerHTML = '<option value="' + user.site_scope + '">' + user.site_scope + '</option>';
+      siteSelect.disabled = true;
+    }
+
+    // Show name field only if user can view names
+    if (user.can_view_names || ['Admin', 'ProjectLead', 'SiteLead'].includes(user.role)) {
+      document.getElementById('enroll-name-group').style.display = 'block';
+    }
+  }
+
+  function submitEnrollment() {
+    const submitBtn = document.getElementById('btn-enroll-submit');
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Enrolling...';
+
+    const enrollmentData = {
+      site: document.getElementById('enroll-site').value,
+      cohort: document.getElementById('enroll-cohort').value.trim(),
+      participant_name: document.getElementById('enroll-name').value.trim(),
+      notes: document.getElementById('enroll-notes').value.trim()
+    };
+
+    // Validate
+    if (!enrollmentData.site) {
+      showToast('Please select a site', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Enroll Participant';
+      return;
+    }
+
+    if (!enrollmentData.cohort) {
+      showToast('Please enter a cohort', 'error');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Enroll Participant';
+      return;
+    }
+
+    // Submit enrollment
+    google.script.run
+      .withSuccessHandler(function(participantId) {
+        newParticipantId = participantId;
+        showEnrollmentSuccess(participantId);
+      })
+      .withFailureHandler(function(error) {
+        handleError(error);
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Enroll Participant';
+      })
+      .createParticipant(enrollmentData);
+  }
+
+  function showEnrollmentSuccess(participantId) {
+    // Hide form
+    document.getElementById('enroll-form').style.display = 'none';
+
+    // Show success message
+    document.getElementById('success-participant-id').textContent = participantId;
+    document.getElementById('enroll-success').style.display = 'block';
+
+    // Setup button
+    document.getElementById('btn-open-participant').addEventListener('click', function() {
+      navigateTo('participant-detail', { participantId: participantId });
+    });
+
+    showToast('Participant enrolled successfully!', 'success');
+  }
+
+  function resetEnrollForm() {
+    // Reset form
+    document.getElementById('enroll-form').reset();
+    document.getElementById('enroll-form').style.display = 'block';
+    document.getElementById('enroll-success').style.display = 'none';
+    document.getElementById('btn-enroll-submit').disabled = false;
+    document.getElementById('btn-enroll-submit').textContent = 'Enroll Participant';
+
+    // Scroll to top
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+</script>

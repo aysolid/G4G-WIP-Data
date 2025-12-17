@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>G4G Data Collection System</title>
+  <?!= include('Styles'); ?>
+</head>
+<body>
+  <!-- Header -->
+  <header class="app-header">
+    <div class="container">
+      <h1 class="app-title"><?= appName ?></h1>
+      <div class="user-info">
+        <span class="user-email"><?= user.email ?></span>
+        <span class="user-role"><?= user.role ?></span>
+        <span class="user-site"><?= user.site_scope ?></span>
+      </div>
+    </div>
+  </header>
+
+  <!-- Navigation -->
+  <nav class="app-nav">
+    <div class="container">
+      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
+      <button class="nav-btn" data-page="participants">Participants</button>
+      <button class="nav-btn" data-page="enroll">Enroll New</button>
+      <? if (user.role === 'Admin') { ?>
+      <button class="nav-btn" data-page="admin">Admin</button>
+      <? } ?>
+    </div>
+  </nav>
+
+  <!-- Main Content Area -->
+  <main class="app-main">
+    <div class="container" id="content-container">
+      <!-- Content will be loaded here -->
+      <div class="loading">Loading...</div>
+    </div>
+  </main>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <script>
+    // Global state
+    const APP_STATE = {
+      currentPage: 'dashboard',
+      currentFilters: {},
+      user: {
+        email: '<?= user.email ?>',
+        role: '<?= user.role ?>',
+        site_scope: '<?= user.site_scope ?>',
+        can_admin: <?= user.role === 'Admin' ? 'true' : 'false' ?>
+      }
+    };
+
+    // Navigation handler
+    document.querySelectorAll('.nav-btn').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const page = this.getAttribute('data-page');
+        navigateTo(page);
+      });
+    });
+
+    function navigateTo(page, params) {
+      // Update active nav button
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.getAttribute('data-page') === page) {
+          btn.classList.add('active');
+        }
+      });
+
+      APP_STATE.currentPage = page;
+
+      // Load content
+      const container = document.getElementById('content-container');
+      container.innerHTML = '<div class="loading">Loading...</div>';
+
+      switch(page) {
+        case 'dashboard':
+          loadDashboard(params);
+          break;
+        case 'participants':
+          loadParticipants(params);
+          break;
+        case 'enroll':
+          loadEnroll();
+          break;
+        case 'participant-detail':
+          loadParticipantDetail(params);
+          break;
+        case 'admin':
+          if (APP_STATE.user.can_admin) {
+            loadAdmin();
+          } else {
+            showToast('Access denied', 'error');
+          }
+          break;
+        default:
+          container.innerHTML = '<p>Page not found</p>';
+      }
+    }
+
+    // Load Dashboard
+    function loadDashboard(params) {
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.getElementById('content-container').innerHTML = html;
+          initDashboard(params);
+        })
+        .withFailureHandler(handleError)
+        .include('Dashboard');
+    }
+
+    // Load Participants
+    function loadParticipants(params) {
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.getElementById('content-container').innerHTML = html;
+          initParticipants(params);
+        })
+        .withFailureHandler(handleError)
+        .include('Participants');
+    }
+
+    // Load Enroll
+    function loadEnroll() {
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.getElementById('content-container').innerHTML = html;
+          initEnroll();
+        })
+        .withFailureHandler(handleError)
+        .include('Enroll');
+    }
+
+    // Load Participant Detail
+    function loadParticipantDetail(params) {
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.getElementById('content-container').innerHTML = html;
+          initParticipantDetail(params.participantId);
+        })
+        .withFailureHandler(handleError)
+        .include('ParticipantDetail');
+    }
+
+    // Load Admin
+    function loadAdmin() {
+      google.script.run
+        .withSuccessHandler(function(html) {
+          document.getElementById('content-container').innerHTML = html;
+          initAdmin();
+        })
+        .withFailureHandler(handleError)
+        .include('Admin');
+    }
+
+    // Toast notification
+    function showToast(message, type) {
+      const toast = document.getElementById('toast');
+      toast.textContent = message;
+      toast.className = 'toast show ' + (type || 'info');
+
+      setTimeout(() => {
+        toast.className = 'toast';
+      }, 3000);
+    }
+
+    // Error handler
+    function handleError(error) {
+      console.error('Error:', error);
+      showToast(error.message || 'An error occurred', 'error');
+    }
+
+    // Download CSV helper
+    function downloadCSV(csvContent, filename) {
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      const url = URL.createObjectURL(blob);
+
+      link.setAttribute('href', url);
+      link.setAttribute('download', filename);
+      link.style.visibility = 'hidden';
+
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    }
+
+    // Format date helper
+    function formatDate(date) {
+      if (!date) return '';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleString();
+    }
+
+    function formatDateShort(date) {
+      if (!date) return '';
+      const d = new Date(date);
+      if (isNaN(d.getTime())) return '';
+      return d.toLocaleDateString();
+    }
+
+    // Initialize on load
+    window.addEventListener('load', function() {
+      navigateTo('dashboard');
+    });
+  </script>
+</body>
+</html>

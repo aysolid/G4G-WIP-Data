@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <base target="_top">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Access Denied - G4G Data Collection System</title>
+  <style>
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+
+    .container {
+      background: white;
+      border-radius: 12px;
+      box-shadow: 0 10px 40px rgba(0,0,0,0.2);
+      max-width: 500px;
+      width: 100%;
+      padding: 40px;
+      text-align: center;
+    }
+
+    .icon {
+      font-size: 64px;
+      margin-bottom: 24px;
+    }
+
+    h1 {
+      font-size: 28px;
+      color: #202124;
+      margin-bottom: 16px;
+    }
+
+    .email {
+      font-size: 14px;
+      color: #5f6368;
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 6px;
+      margin: 24px 0;
+      word-break: break-all;
+    }
+
+    .message {
+      font-size: 16px;
+      color: #5f6368;
+      line-height: 1.6;
+      margin-bottom: 24px;
+    }
+
+    .instructions {
+      background: #e8f0fe;
+      border-left: 4px solid #1967d2;
+      padding: 16px;
+      text-align: left;
+      border-radius: 4px;
+      margin-bottom: 24px;
+    }
+
+    .instructions h3 {
+      font-size: 14px;
+      color: #1967d2;
+      margin-bottom: 8px;
+      font-weight: 600;
+    }
+
+    .instructions p {
+      font-size: 14px;
+      color: #1967d2;
+      line-height: 1.6;
+    }
+
+    .contact-info {
+      font-size: 14px;
+      color: #5f6368;
+      margin-top: 24px;
+      padding-top: 24px;
+      border-top: 1px solid #dadce0;
+    }
+
+    .contact-info strong {
+      color: #202124;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="icon">🔒</div>
+
+    <h1>Access Not Authorized</h1>
+
+    <p class="message">
+      You do not have permission to access the G4G Data Collection System.
+    </p>
+
+    <div class="email">
+      Your email: <strong><script>document.write(Session.getActiveUser().getEmail());</script></strong>
+    </div>
+
+    <div class="instructions">
+      <h3>How to Get Access</h3>
+      <p>
+        Contact your site lead or project administrator to request access.
+        They will need to add your email address to the system with the appropriate role.
+      </p>
+    </div>
+
+    <div class="contact-info">
+      <p>
+        <strong>UGA Site Lead:</strong> Contact your UGA research coordinator<br>
+        <strong>MIZZOU Site Lead:</strong> Contact your MIZZOU research coordinator<br>
+        <strong>System Administrator:</strong> Contact the project PI or technical lead
+      </p>
+    </div>
+  </div>
+</body>
+</html>
