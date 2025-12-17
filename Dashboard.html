@@ -22,15 +22,16 @@
       </select>
     </div>
     <div class="filter-group" style="display: flex; align-items: flex-end;">
-      <button id="btn-apply-filters" class="btn btn-primary">Apply Filters</button>
+      <button id="btn-apply-filters" class="btn btn-primary" onclick="loadDashboardData()">Apply Filters</button>
     </div>
     <div class="filter-group" style="display: flex; align-items: flex-end;">
-      <button id="btn-export" class="btn btn-secondary">Export CSV</button>
+      <button id="btn-export" class="btn btn-secondary" onclick="exportParticipantsData()">Export CSV</button>
     </div>
   </div>
 
   <div class="stats-grid" id="stats-grid">
-    </div>
+    <div class="loading">Loading stats...</div>
+  </div>
 
   <div class="card" id="top-missing-card" style="display: none;">
     <h2 class="card-title">Top 5 Missing Instruments</h2>
@@ -43,7 +44,7 @@
       <table id="participants-table">
         <thead>
           <tr>
-            <th>Participant ID</th>
+            <th>ID</th>
             <th>Site</th>
             <th>Cohort</th>
             <th>Status</th>
@@ -59,23 +60,3 @@
     </div>
   </div>
 </div>
-
-// ... existing HTML ...
-<script>
-  function initDashboard() {
-    loadDashboardData();
-  }
-  
-  function loadDashboardData() {
-    const filters = APP_STATE.currentFilters || {};
-    // PASS TOKEN HERE
-    google.script.run
-      .withSuccessHandler(renderDashboard)
-      .withFailureHandler(handleError)
-      .getDashboardStats(STATE.token, filters);
-  }
-  
-  function renderDashboard(data) {
-    // ... same rendering logic as before ...
-  }
-</script>

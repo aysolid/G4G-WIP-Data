@@ -46,33 +46,24 @@
 
     <main class="app-main">
       <div class="container" id="content-container">
-        </div>
+        <div class="loading">Loading...</div>
+      </div>
     </main>
   </div>
 
   <div id="toast" class="toast"></div>
 
   <script>
-    // Global State
-    const STATE = {
-      token: null,
-      user: null,
-      refreshInterval: null
-    };
+    const STATE = { token: null, user: null, refreshInterval: null, currentFilters: {} };
 
-    // --- AUTHENTICATION ---
-    
+    // ==========================================
+    // AUTHENTICATION & NAVIGATION
+    // ==========================================
     document.getElementById('login-form').addEventListener('submit', function(e) {
       e.preventDefault();
       const btn = document.getElementById('btn-login');
       const err = document.getElementById('login-error');
-      
-      btn.disabled = true;
-      btn.textContent = 'Verifying...';
-      err.style.display = 'none';
-
-      const u = document.getElementById('login-username').value;
-      const p = document.getElementById('login-password').value;
+      btn.disabled = true; btn.textContent = 'Verifying...'; err.style.display = 'none';
 
       google.script.run
         .withSuccessHandler(function(res) {
@@ -83,46 +74,32 @@
           }
         })
         .withFailureHandler(function(e) {
-          err.textContent = e.message;
-          err.style.display = 'block';
-          btn.disabled = false;
-          btn.textContent = 'Login';
+          err.textContent = e.message; err.style.display = 'block';
+          btn.disabled = false; btn.textContent = 'Login';
         })
-        .login(u, p);
+        .login(document.getElementById('login-username').value, document.getElementById('login-password').value);
     });
 
     function initAppUI() {
-      // Hide login, show app
       document.getElementById('login-view').style.display = 'none';
       document.getElementById('app-shell').style.display = 'block';
-      
-      // Update Header
       document.getElementById('header-user').textContent = STATE.user.username + ' (' + STATE.user.role + ')';
       document.getElementById('header-site').textContent = STATE.user.site_scope;
 
-      // Show Admin Portal button if authorized (Admin, Leads, Facilitators need it for Enroll)
       if (STATE.user.can_enroll || STATE.user.can_admin) {
         document.getElementById('nav-admin').style.display = 'inline-block';
       }
-
-      // Load Dashboard
-      nav('dashboard');
-
-      // Start Real-time Refresh
+      
+      // Start Real-time refresh
       if (STATE.refreshInterval) clearInterval(STATE.refreshInterval);
       STATE.refreshInterval = setInterval(refreshCurrentView, 30000); // 30 seconds
+
+      nav('dashboard');
     }
 
-    function logout() {
-      STATE.token = null;
-      STATE.user = null;
-      location.reload();
-    }
-
-    // --- NAVIGATION ---
+    function logout() { STATE.token = null; STATE.user = null; location.reload(); }
 
     function nav(page, params) {
-      // Highlight Nav
       document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
       const activeBtn = document.querySelector(`.nav-btn[data-page="${page}"]`);
       if(activeBtn) activeBtn.classList.add('active');
@@ -132,11 +109,10 @@
 
       const run = google.script.run.withSuccessHandler(html => {
         container.innerHTML = html;
-        // Init Logic based on page
         if(page === 'dashboard') initDashboard();
         if(page === 'participants') initParticipants();
-        if(page === 'participant-detail') initDetail(params);
-        if(page === 'admin') initAdmin();
+        if(page === 'participant-detail') initDetail(params); // You need to clean ParticipantDetail.html too!
+        if(page === 'admin') appInitAdmin();
       }).withFailureHandler(handleError);
 
       if (page === 'dashboard') run.include('Dashboard');
@@ -146,27 +122,240 @@
     }
 
     function refreshCurrentView() {
-      const activeBtn = document.querySelector('.nav-btn.active');
-      if (activeBtn) {
-        const page = activeBtn.getAttribute('data-page');
-        if (page === 'dashboard' && typeof loadDashboardData === 'function') loadDashboardData();
-        if (page === 'participants' && typeof loadParticipantsList === 'function') loadParticipantsList();
+      const active = document.querySelector('.nav-btn.active');
+      if(!active) return;
+      const page = active.getAttribute('data-page');
+      if (page === 'dashboard') loadDashboardData();
+      if (page === 'participants') loadParticipantsList();
+    }
+
+    // ==========================================
+    // DASHBOARD LOGIC
+    // ==========================================
+    function initDashboard() {
+      loadDashboardData();
+    }
+
+    function loadDashboardData() {
+      // Collect filters if elements exist (might be called by refresh)
+      const siteEl = document.getElementById('filter-site');
+      if (siteEl) {
+        STATE.currentFilters = {
+          site: document.getElementById('filter-site').value,
+          cohort: document.getElementById('filter-cohort').value,
+          status: document.getElementById('filter-status').value
+        };
+      }
+      
+      google.script.run.withSuccessHandler(renderDashboard).withFailureHandler(handleError)
+        .getDashboardStats(STATE.token, STATE.currentFilters);
+    }
+
+    function renderDashboard(data) {
+      // 1. Populate Dropdowns (only if not already populated/changed)
+      const siteFilter = document.getElementById('filter-site');
+      if (siteFilter && siteFilter.options.length <= 1) {
+         if (data.user.site_scope === 'ALL') {
+            siteFilter.innerHTML = '<option value="ALL">All Sites</option><option value="UGA">UGA</option><option value="MIZZOU">MIZZOU</option>';
+         } else {
+            siteFilter.innerHTML = '<option value="' + data.user.site_scope + '">' + data.user.site_scope + '</option>';
+            siteFilter.disabled = true;
+         }
+         siteFilter.value = STATE.currentFilters.site || (data.user.site_scope === 'ALL' ? 'ALL' : data.user.site_scope);
+      }
+
+      const cohortFilter = document.getElementById('filter-cohort');
+      if (cohortFilter && cohortFilter.options.length <= 1) {
+         let opts = '<option value="">All Cohorts</option>';
+         data.cohorts.forEach(c => opts += `<option value="${c}">${c}</option>`);
+         cohortFilter.innerHTML = opts;
+         if(STATE.currentFilters.cohort) cohortFilter.value = STATE.currentFilters.cohort;
+      }
+
+      // 2. Render Stats
+      const stats = data.stats;
+      const grid = document.getElementById('stats-grid');
+      if(grid) {
+        grid.innerHTML = `
+          <div class="stat-card"><div class="stat-value">${stats.total_participants}</div><div class="stat-label">Total Participants</div></div>
+          <div class="stat-card"><div class="stat-value">${stats.fully_complete}</div><div class="stat-label">Fully Complete</div></div>
+          <div class="stat-card"><div class="stat-value">${stats.fully_complete_percent}%</div><div class="stat-label">% Complete</div></div>
+          <div class="stat-card"><div class="stat-value">${stats.avg_completion}%</div><div class="stat-label">Avg Progress</div></div>
+          <div class="stat-card"><div class="stat-value">${stats.total_missing}</div><div class="stat-label">Missing Items</div></div>
+        `;
+      }
+
+      // 3. Render Table
+      const tbody = document.getElementById('participants-tbody');
+      if(tbody) {
+        if (data.participants.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="8" class="text-center text-muted">No participants found</td></tr>';
+        } else {
+          tbody.innerHTML = data.participants.map(p => {
+            const statusClass = p.status === 'Active' ? 'badge-success' : p.status === 'Withdrawn' ? 'badge-danger' : 'badge-info';
+            return `
+              <tr>
+                <td><strong>${p.participant_id}</strong></td>
+                <td>${p.site}</td>
+                <td>${p.cohort || '-'}</td>
+                <td><span class="badge ${statusClass}">${p.status}</span></td>
+                <td><div class="progress"><div class="progress-bar" style="width: ${p.completion_percent}%"></div></div> ${p.completion_percent}%</td>
+                <td><span class="badge ${p.missing_count > 0 ? 'badge-warning' : 'badge-success'}">${p.missing_count}</span></td>
+                <td>${formatDateShort(p.last_updated)}</td>
+                <td><button class="btn btn-primary btn-small" onclick="nav('participant-detail', {participantId: '${p.participant_id}'})">Open</button></td>
+              </tr>`;
+          }).join('');
+        }
       }
     }
 
-    // --- SHARED UTILS ---
-
-    function handleError(e) {
-      console.error(e);
-      showToast(e.message || 'Error occurred', 'error');
+    function exportParticipantsData() {
+        google.script.run.withSuccessHandler(csv => {
+            downloadCSV(csv, 'dashboard_export.csv');
+        }).exportParticipants(STATE.currentFilters);
     }
 
-    function showToast(msg, type) {
-      const t = document.getElementById('toast');
-      t.textContent = msg;
-      t.className = 'toast show ' + (type||'info');
-      setTimeout(() => t.className = 'toast', 3000);
+    // ==========================================
+    // PARTICIPANTS LIST LOGIC
+    // ==========================================
+    function initParticipants() { loadParticipantsList(); }
+
+    function loadParticipantsList() {
+      const filters = {
+        search: document.getElementById('search-participant') ? document.getElementById('search-participant').value : '',
+        site: document.getElementById('filter-site-participants') ? document.getElementById('filter-site-participants').value : 'ALL',
+        status: document.getElementById('filter-status-participants') ? document.getElementById('filter-status-participants').value : ''
+      };
+      
+      // Spinner
+      const tbody = document.getElementById('participants-list-tbody');
+      if(tbody) tbody.innerHTML = '<tr><td colspan="8" class="text-center">Loading...</td></tr>';
+
+      google.script.run.withSuccessHandler(renderParticipantsList).withFailureHandler(handleError)
+        .getDashboardStats(STATE.token, filters);
     }
+
+    function renderParticipantsList(data) {
+      // Sync Dropdowns (similar logic to dashboard)
+      const siteFilter = document.getElementById('filter-site-participants');
+      if(siteFilter && siteFilter.options.length <= 1) {
+         if (data.user.site_scope === 'ALL') siteFilter.innerHTML = '<option value="ALL">All Sites</option><option value="UGA">UGA</option><option value="MIZZOU">MIZZOU</option>';
+         else { siteFilter.innerHTML = `<option value="${data.user.site_scope}">${data.user.site_scope}</option>`; siteFilter.disabled = true; }
+      }
+
+      const tbody = document.getElementById('participants-list-tbody');
+      if(tbody) {
+         if(data.participants.length === 0) tbody.innerHTML = '<tr><td colspan="8" class="text-center">No participants found</td></tr>';
+         else {
+            tbody.innerHTML = data.participants.map(p => `
+              <tr>
+                <td><strong>${p.participant_id}</strong></td>
+                <td>${p.site}</td>
+                <td>${p.cohort || '-'}</td>
+                <td>${p.status}</td>
+                <td>${formatDateShort(p.enroll_date)}</td>
+                <td>${p.completion_percent}%</td>
+                <td>${p.missing_count > 0 ? `<a href="#" onclick="showMissingItems('${p.participant_id}')" class="text-danger">${p.missing_count} missing</a>` : 'Complete'}</td>
+                <td><button class="btn btn-primary btn-small" onclick="nav('participant-detail', {participantId: '${p.participant_id}'})">Open</button></td>
+              </tr>
+            `).join('');
+            document.getElementById('participants-count').textContent = `Showing ${data.participants.length} participants`;
+         }
+      }
+    }
+
+    function showMissingItems(id) {
+       google.script.run.withSuccessHandler(detail => {
+          const missing = detail.completions.filter(c => !c.is_complete);
+          document.getElementById('detail-participant-id-missing').textContent = id;
+          document.getElementById('missing-items-list').innerHTML = `<ol>${missing.map(m => `<li>${m.instrument_name}</li>`).join('')}</ol>`;
+          document.getElementById('missing-items-detail').style.display = 'block';
+       }).getParticipantDetail(STATE.token, id);
+    }
+
+    function exportParticipantsList() {
+        const filters = {
+            search: document.getElementById('search-participant').value,
+            site: document.getElementById('filter-site-participants').value,
+            status: document.getElementById('filter-status-participants').value
+        };
+        google.script.run.withSuccessHandler(csv => downloadCSV(csv, 'participants_list.csv')).exportParticipants(filters);
+    }
+
+    // ==========================================
+    // ADMIN LOGIC (From previous fix)
+    // ==========================================
+    function appInitAdmin() {
+      const user = STATE.user;
+      if (user.can_admin) { document.getElementById('tab-users').style.display = 'inline-block'; appLoadUsers(); }
+      else { document.getElementById('tab-users').style.display = 'none'; }
+      
+      const siteSel = document.getElementById('enroll-site');
+      if (siteSel) {
+        if (user.site_scope !== 'ALL') { siteSel.value = user.site_scope; siteSel.disabled = true; } 
+        else { siteSel.disabled = false; }
+      }
+    }
+    function appShowAdminSection(id) {
+      document.querySelectorAll('.admin-section').forEach(d => d.style.display = 'none');
+      document.getElementById('section-' + id).style.display = 'block';
+    }
+    function appSubmitEnroll(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-enroll');
+      btn.disabled = true; btn.textContent = "Enrolling...";
+      const data = {
+        site: document.getElementById('enroll-site').value,
+        cohort: document.getElementById('enroll-cohort').value,
+        participant_name: document.getElementById('enroll-name').value,
+        notes: document.getElementById('enroll-notes').value
+      };
+      if (!data.site) return showToast('Select site', 'error');
+      google.script.run.withSuccessHandler(() => {
+          showToast('Enrolled!', 'success'); document.getElementById('enroll-form').reset();
+          if (STATE.user.site_scope !== 'ALL') document.getElementById('enroll-site').value = STATE.user.site_scope;
+          btn.disabled = false; btn.textContent = "Enroll";
+      }).withFailureHandler(err => { handleError(err); btn.disabled = false; btn.textContent = "Enroll"; }).createParticipant(STATE.token, data);
+    }
+    function appLoadUsers() {
+      google.script.run.withSuccessHandler(users => {
+        document.getElementById('users-tbody').innerHTML = users.map(u => `
+          <tr><td>${u.username}</td><td>${u.role}</td><td>${u.site_scope}</td><td>${u.active}</td>
+          <td><button class="btn btn-link" onclick='appEditUser(${JSON.stringify(u)})'>Edit</button></td></tr>
+        `).join('');
+      }).getUsers(STATE.token);
+    }
+    function appOpenUserModal() { document.getElementById('user-modal').classList.add('show'); }
+    function appCloseUserModal() { document.getElementById('user-modal').classList.remove('show'); }
+    function appEditUser(u) {
+       document.getElementById('user-modal').classList.add('show');
+       document.getElementById('form-user-name').value = u.username;
+       document.getElementById('form-user-role').value = u.role;
+       document.getElementById('form-user-site').value = u.site_scope;
+    }
+    function appSubmitUser() {
+        const data = {
+            username: document.getElementById('form-user-name').value,
+            password: document.getElementById('form-user-pass').value,
+            role: document.getElementById('form-user-role').value,
+            site_scope: document.getElementById('form-user-site').value,
+            active: document.getElementById('form-user-active').checked
+        };
+        google.script.run.withSuccessHandler(() => { appCloseUserModal(); appLoadUsers(); }).saveUser(STATE.token, data);
+    }
+
+    // ==========================================
+    // UTILS
+    // ==========================================
+    function handleError(e) { console.error(e); showToast(e.message || 'Error', 'error'); }
+    function showToast(msg, type) { const t = document.getElementById('toast'); t.textContent = msg; t.className = 'toast show '+(type||'info'); setTimeout(()=>t.className='toast',3000); }
+    function formatDateShort(d) { if(!d) return ''; const date = new Date(d); return isNaN(date) ? '' : date.toLocaleDateString(); }
+    function downloadCSV(csv, name) {
+      const blob = new Blob([csv], { type: 'text/csv' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+    }
+    function initDetail(params) { /* Logic for ParticipantDetail would go here if migrated */ }
   </script>
 </body>
 </html>
