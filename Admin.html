@@ -1,454 +1,160 @@
-<!-- Admin Page -->
 <div class="admin-page">
-  <h2 style="margin-bottom: 24px;">System Administration</h2>
+  <div style="display: flex; gap: 16px; margin-bottom: 20px;">
+    <button class="btn btn-secondary" onclick="showSection('enroll')" id="tab-enroll">Enroll New Participant</button>
+    <button class="btn btn-secondary" onclick="showSection('users')" id="tab-users">User Management</button>
+  </div>
 
-  <!-- User Management -->
-  <div class="card">
-    <h2 class="card-title">User Management</h2>
-
-    <button class="btn btn-primary mb-2" id="btn-add-user" onclick="openAddUserModal()">Add New User</button>
-
-    <div class="table-container">
-      <table id="users-table">
-        <thead>
-          <tr>
-            <th>Email</th>
-            <th>Role</th>
-            <th>Site Scope</th>
-            <th>Status</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="users-tbody">
-          <!-- Rows will be loaded here -->
-        </tbody>
-      </table>
+  <div id="section-enroll" class="admin-section">
+    <div class="card" style="max-width: 800px;">
+      <h2 class="card-title">Enroll New Participant</h2>
+      <form id="enroll-form">
+        <div class="form-group">
+          <label class="form-label">Site</label>
+          <select id="enroll-site" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Cohort</label>
+          <input type="text" id="enroll-cohort" class="form-input" placeholder="e.g. Fall 2024" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Full Name (Required)</label>
+          <input type="text" id="enroll-name" class="form-input" placeholder="First Last" required>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Notes</label>
+          <textarea id="enroll-notes" class="form-textarea"></textarea>
+        </div>
+        <button type="submit" class="btn btn-primary" id="btn-enroll">Enroll</button>
+      </form>
     </div>
   </div>
 
-  <!-- Instrument Links Management -->
-  <div class="card">
-    <h2 class="card-title">Instrument Links</h2>
-    <p class="text-muted mb-2">Configure default URLs for each instrument (QuestionPro, Google Forms, etc.)</p>
-
-    <div class="table-container">
-      <table id="instruments-table">
-        <thead>
-          <tr>
-            <th style="width: 50px;">#</th>
-            <th>Instrument Name</th>
-            <th>Default URL</th>
-            <th>Actions</th>
-          </tr>
-        </thead>
-        <tbody id="instruments-tbody">
-          <!-- Rows will be loaded here -->
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <!-- Maintenance Tools -->
-  <div class="card">
-    <h2 class="card-title">Maintenance Tools</h2>
-
-    <div style="margin-bottom: 16px;">
-      <button class="btn btn-secondary" onclick="recalculateAll()">
-        Recalculate All Completions
-      </button>
-      <span class="form-hint">Recalculates completion % and missing counts for all participants</span>
-    </div>
-
-    <div style="margin-bottom: 16px;">
-      <button class="btn btn-secondary" onclick="viewAuditLog()">
-        View Audit Log
-      </button>
-      <span class="form-hint">View recent system activity</span>
-    </div>
-  </div>
-
-  <!-- Audit Log -->
-  <div class="card" id="audit-log-card" style="display: none;">
-    <h2 class="card-title">Recent Audit Log (Last 50 Events)</h2>
-    <button class="btn btn-secondary btn-small mb-2" onclick="closeAuditLog()">Close</button>
-
-    <div class="table-container">
-      <table id="audit-table">
-        <thead>
-          <tr>
-            <th>Timestamp</th>
-            <th>User</th>
-            <th>Action</th>
-            <th>Participant ID</th>
-            <th>Details</th>
-          </tr>
-        </thead>
-        <tbody id="audit-tbody">
-          <!-- Rows will be loaded here -->
-        </tbody>
-      </table>
+  <div id="section-users" class="admin-section" style="display: none;">
+    <div class="card">
+      <h2 class="card-title">User Management</h2>
+      <button class="btn btn-primary mb-2" onclick="openUserModal()">Add User</button>
+      <div class="table-container">
+        <table id="users-table">
+          <thead><tr><th>Username</th><th>Role</th><th>Site</th><th>Status</th><th>Actions</th></tr></thead>
+          <tbody id="users-tbody"></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>
 
-<!-- Add/Edit User Modal -->
 <div id="user-modal" class="modal">
   <div class="modal-content">
-    <div class="modal-header">
-      <h3 class="modal-title" id="user-modal-title">Add New User</h3>
-    </div>
+    <div class="modal-header"><h3 class="modal-title">Save User</h3></div>
     <div class="modal-body">
-      <div class="form-group">
-        <label class="form-label">Email *</label>
-        <input type="email" id="user-email" class="form-input" placeholder="user@example.com" required>
-        <span class="form-hint">User must have access to this Google account</span>
-      </div>
-
-      <div class="form-group">
-        <label class="form-label">Role *</label>
-        <select id="user-role" class="form-select" required>
-          <option value="Admin">Admin - Full system access</option>
-          <option value="ProjectLead">Project Lead - View all sites, can view names</option>
-          <option value="SiteLead">Site Lead - Manage own site, can view names</option>
-          <option value="Facilitator">Facilitator - Create participants, update completions</option>
-          <option value="Viewer">Viewer - Read-only access</option>
+      <div class="form-group"><label>Username</label><input type="text" id="form-user-name" class="form-input"></div>
+      <div class="form-group"><label>Password</label><input type="text" id="form-user-pass" class="form-input"></div>
+      <div class="form-group"><label>Role</label>
+        <select id="form-user-role" class="form-select">
+          <option value="Facilitator">Facilitator</option>
+          <option value="SiteLead">Site Lead</option>
+          <option value="ProjectLead">Project Lead</option>
+          <option value="Admin">Admin</option>
+          <option value="Viewer">Viewer</option>
         </select>
       </div>
-
-      <div class="form-group">
-        <label class="form-label">Site Scope *</label>
-        <select id="user-site-scope" class="form-select" required>
-          <option value="ALL">ALL - Access to all sites</option>
+      <div class="form-group"><label>Site</label>
+        <select id="form-user-site" class="form-select">
           <option value="UGA">UGA</option>
           <option value="MIZZOU">MIZZOU</option>
+          <option value="ALL">ALL (Admins only)</option>
         </select>
-        <span class="form-hint">Limit user access to specific site (except Admin/ProjectLead)</span>
       </div>
-
-      <div class="form-group">
-        <label style="display: flex; align-items: center; gap: 8px;">
-          <input type="checkbox" id="user-active" checked>
-          <span>Active</span>
-        </label>
-      </div>
+      <div class="form-group"><label><input type="checkbox" id="form-user-active" checked> Active</label></div>
     </div>
     <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeUserModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveUser()" id="btn-save-user">Save User</button>
-    </div>
-  </div>
-</div>
-
-<!-- Edit Instrument URL Modal -->
-<div id="instrument-modal" class="modal">
-  <div class="modal-content">
-    <div class="modal-header">
-      <h3 class="modal-title">Edit Instrument Link</h3>
-    </div>
-    <div class="modal-body">
-      <p id="instrument-modal-name" style="font-weight: 500; margin-bottom: 16px;"></p>
-
-      <div class="form-group">
-        <label class="form-label">Default URL</label>
-        <input type="url" id="instrument-url" class="form-input" placeholder="https://...">
-        <span class="form-hint">Enter QuestionPro, Google Forms, or other external survey link</span>
-      </div>
-    </div>
-    <div class="modal-footer">
-      <button class="btn btn-secondary" onclick="closeInstrumentModal()">Cancel</button>
-      <button class="btn btn-primary" onclick="saveInstrumentUrl()" id="btn-save-instrument">Save</button>
+      <button class="btn btn-secondary" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="submitUser()">Save</button>
     </div>
   </div>
 </div>
 
 <script>
-  let currentEditUser = null;
-  let currentEditInstrument = null;
-  let allUsers = [];
-  let allInstruments = [];
-
-  function initAdmin() {
-    loadUsers();
-    loadInstruments();
+function initAdmin() {
+  const user = STATE.user;
+  
+  // Show/Hide Tabs based on Role
+  if (!user.can_admin) {
+    document.getElementById('tab-users').style.display = 'none';
   }
-
-  function loadUsers() {
-    document.getElementById('users-tbody').innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
-
-    google.script.run
-      .withSuccessHandler(function(users) {
-        allUsers = users;
-        renderUsersTable(users);
-      })
-      .withFailureHandler(handleError)
-      .getUsers();
+  
+  // Setup Enroll Form
+  const siteSel = document.getElementById('enroll-site');
+  if (user.site_scope === 'ALL') {
+    siteSel.innerHTML = '<option value="UGA">UGA</option><option value="MIZZOU">MIZZOU</option>';
+  } else {
+    siteSel.innerHTML = '<option value="'+user.site_scope+'">'+user.site_scope+'</option>';
   }
-
-  function renderUsersTable(users) {
-    const tbody = document.getElementById('users-tbody');
-
-    if (users.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No users found</td></tr>';
-      return;
-    }
-
-    let html = '';
-    users.forEach(u => {
-      const statusBadge = u.active ?
-        '<span class="badge badge-success">Active</span>' :
-        '<span class="badge badge-danger">Inactive</span>';
-
-      html += `
-        <tr>
-          <td>${u.email}</td>
-          <td><span class="badge badge-info">${u.role}</span></td>
-          <td>${u.site_scope}</td>
-          <td>${statusBadge}</td>
-          <td>
-            <button class="btn btn-link btn-small" onclick='editUser(${JSON.stringify(u)})'>Edit</button>
-            <button class="btn btn-link btn-small text-danger" onclick="deleteUserConfirm('${u.email}')">Delete</button>
-          </td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = html;
-  }
-
-  function openAddUserModal() {
-    currentEditUser = null;
-    const modal = document.getElementById('user-modal');
-
-    if (!modal) {
-      console.error('User modal not found in DOM');
-      showToast('Error: Modal not found', 'error');
-      return;
-    }
-
-    document.getElementById('user-modal-title').textContent = 'Add New User';
-    document.getElementById('user-email').value = '';
-    document.getElementById('user-email').disabled = false;
-    document.getElementById('user-role').value = 'Facilitator';
-    document.getElementById('user-site-scope').value = 'UGA';
-    document.getElementById('user-active').checked = true;
-    modal.classList.add('show');
-  }
-
-  function editUser(user) {
-    currentEditUser = user;
-    document.getElementById('user-modal-title').textContent = 'Edit User';
-    document.getElementById('user-email').value = user.email;
-    document.getElementById('user-email').disabled = true;
-    document.getElementById('user-role').value = user.role;
-    document.getElementById('user-site-scope').value = user.site_scope;
-    document.getElementById('user-active').checked = user.active;
-    document.getElementById('user-modal').classList.add('show');
-  }
-
-  function closeUserModal() {
-    document.getElementById('user-modal').classList.remove('show');
-    currentEditUser = null;
-  }
-
-  function saveUser() {
-    const btn = document.getElementById('btn-save-user');
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-
-    const userData = {
-      email: document.getElementById('user-email').value.trim(),
-      role: document.getElementById('user-role').value,
-      site_scope: document.getElementById('user-site-scope').value,
-      active: document.getElementById('user-active').checked
-    };
-
-    if (!userData.email) {
-      showToast('Email is required', 'error');
-      btn.disabled = false;
-      btn.textContent = 'Save User';
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler(function() {
-        closeUserModal();
-        loadUsers();
-        showToast('User saved successfully', 'success');
-      })
-      .withFailureHandler(function(error) {
-        handleError(error);
-        btn.disabled = false;
-        btn.textContent = 'Save User';
-      })
-      .saveUser(userData);
-  }
-
-  function deleteUserConfirm(email) {
-    if (!confirm('Are you sure you want to delete user: ' + email + '?')) {
-      return;
-    }
-
-    google.script.run
-      .withSuccessHandler(function() {
-        loadUsers();
-        showToast('User deleted', 'success');
-      })
-      .withFailureHandler(handleError)
-      .deleteUser(email);
-  }
-
-  function loadInstruments() {
-    document.getElementById('instruments-tbody').innerHTML = '<tr><td colspan="4" class="text-center">Loading...</td></tr>';
-
-    google.script.run
-      .withSuccessHandler(function(instruments) {
-        allInstruments = instruments;
-        renderInstrumentsTable(instruments);
-      })
-      .withFailureHandler(handleError)
-      .getInstruments();
-  }
-
-  function renderInstrumentsTable(instruments) {
-    const tbody = document.getElementById('instruments-tbody');
-
-    let html = '';
-    instruments.forEach(inst => {
-      html += `
-        <tr>
-          <td style="text-align: center; color: var(--text-secondary);">${inst.sort_order}</td>
-          <td><strong>${inst.instrument_name}</strong></td>
-          <td style="font-size: 12px; max-width: 300px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">
-            ${inst.default_url ?
-              '<a href="' + inst.default_url + '" target="_blank">' + inst.default_url + '</a>' :
-              '<span class="text-muted">No URL set</span>'
-            }
-          </td>
-          <td>
-            <button class="btn btn-link btn-small" onclick='editInstrument(${JSON.stringify(inst)})'>Edit URL</button>
-          </td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = html;
-  }
-
-  function editInstrument(instrument) {
-    currentEditInstrument = instrument;
-    document.getElementById('instrument-modal-name').textContent = instrument.instrument_name;
-    document.getElementById('instrument-url').value = instrument.default_url || '';
-    document.getElementById('instrument-modal').classList.add('show');
-  }
-
-  function closeInstrumentModal() {
-    document.getElementById('instrument-modal').classList.remove('show');
-    currentEditInstrument = null;
-  }
-
-  function saveInstrumentUrl() {
-    if (!currentEditInstrument) return;
-
-    const btn = document.getElementById('btn-save-instrument');
-    btn.disabled = true;
-    btn.textContent = 'Saving...';
-
-    const url = document.getElementById('instrument-url').value.trim();
-
-    google.script.run
-      .withSuccessHandler(function() {
-        closeInstrumentModal();
-        loadInstruments();
-        showToast('Instrument URL updated', 'success');
-      })
-      .withFailureHandler(function(error) {
-        handleError(error);
-        btn.disabled = false;
-        btn.textContent = 'Save';
-      })
-      .updateInstrument(currentEditInstrument.instrument_id, url);
-  }
-
-  function recalculateAll() {
-    if (!confirm('This will recalculate completion statistics for all participants. Continue?')) {
-      return;
-    }
-
-    showToast('Recalculating... This may take a moment', 'info');
-
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showToast(result, 'success');
-      })
-      .withFailureHandler(handleError)
-      .recalculateAllCompletions();
-  }
-
-  function viewAuditLog() {
-    document.getElementById('audit-tbody').innerHTML = '<tr><td colspan="5" class="text-center">Loading...</td></tr>';
-    document.getElementById('audit-log-card').style.display = 'block';
-
-    google.script.run
-      .withSuccessHandler(function(logs) {
-        renderAuditLog(logs);
-      })
-      .withFailureHandler(handleError)
-      .getAuditLogs(50);
-
-    // Scroll to audit log
-    document.getElementById('audit-log-card').scrollIntoView({ behavior: 'smooth' });
-  }
-
-  function renderAuditLog(logs) {
-    const tbody = document.getElementById('audit-tbody');
-
-    if (logs.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="5" class="text-center text-muted">No audit logs found</td></tr>';
-      return;
-    }
-
-    let html = '';
-    logs.forEach(log => {
-      html += `
-        <tr>
-          <td style="font-size: 12px; white-space: nowrap;">${formatDate(log.timestamp)}</td>
-          <td style="font-size: 12px;">${log.user_email}</td>
-          <td><span class="badge badge-info">${log.action}</span></td>
-          <td>${log.participant_id || '-'}</td>
-          <td style="font-size: 11px; max-width: 200px; overflow: hidden; text-overflow: ellipsis;">
-            ${log.details_json || '-'}
-          </td>
-        </tr>
-      `;
-    });
-
-    tbody.innerHTML = html;
-  }
-
-  function closeAuditLog() {
-    document.getElementById('audit-log-card').style.display = 'none';
-  }
-
-  // Close modals when clicking outside
-  document.addEventListener('click', function(e) {
-    if (e.target.id === 'user-modal') {
-      closeUserModal();
-    }
-    if (e.target.id === 'instrument-modal') {
-      closeInstrumentModal();
-    }
+  
+  document.getElementById('enroll-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    submitEnroll();
   });
 
-  // Make functions globally accessible for onclick handlers
-  window.openAddUserModal = openAddUserModal;
-  window.editUser = editUser;
-  window.closeUserModal = closeUserModal;
-  window.saveUser = saveUser;
-  window.deleteUserConfirm = deleteUserConfirm;
-  window.editInstrument = editInstrument;
-  window.closeInstrumentModal = closeInstrumentModal;
-  window.saveInstrumentUrl = saveInstrumentUrl;
-  window.recalculateAll = recalculateAll;
-  window.viewAuditLog = viewAuditLog;
-  window.closeAuditLog = closeAuditLog;
+  // Load Users if Admin
+  if (user.can_admin) loadUsers();
+}
+
+function showSection(id) {
+  document.querySelectorAll('.admin-section').forEach(d => d.style.display = 'none');
+  document.getElementById('section-' + id).style.display = 'block';
+}
+
+function submitEnroll() {
+  const btn = document.getElementById('btn-enroll');
+  btn.disabled = true;
+  const data = {
+    site: document.getElementById('enroll-site').value,
+    cohort: document.getElementById('enroll-cohort').value,
+    participant_name: document.getElementById('enroll-name').value,
+    notes: document.getElementById('enroll-notes').value
+  };
+  
+  google.script.run
+    .withSuccessHandler(() => {
+      showToast('Enrolled!', 'success');
+      document.getElementById('enroll-form').reset();
+      btn.disabled = false;
+    })
+    .withFailureHandler(err => { handleError(err); btn.disabled = false; })
+    .createParticipant(STATE.token, data);
+}
+
+function loadUsers() {
+  google.script.run.withSuccessHandler(renderUsers).getUsers(STATE.token);
+}
+
+function renderUsers(users) {
+  const html = users.map(u => `
+    <tr>
+      <td>${u.username}</td>
+      <td>${u.role}</td>
+      <td>${u.site_scope}</td>
+      <td>${u.active ? 'Active' : 'Inactive'}</td>
+      <td><button class="btn btn-link" onclick='editUser(${JSON.stringify(u)})'>Edit</button></td>
+    </tr>
+  `).join('');
+  document.getElementById('users-tbody').innerHTML = html;
+}
+
+function openUserModal() { document.getElementById('user-modal').classList.add('show'); }
+function closeModal() { document.getElementById('user-modal').classList.remove('show'); }
+
+function submitUser() {
+  const data = {
+    username: document.getElementById('form-user-name').value,
+    password: document.getElementById('form-user-pass').value,
+    role: document.getElementById('form-user-role').value,
+    site_scope: document.getElementById('form-user-site').value,
+    active: document.getElementById('form-user-active').checked
+  };
+  google.script.run.withSuccessHandler(() => {
+    closeModal(); loadUsers(); showToast('User Saved');
+  }).saveUser(STATE.token, data);
+}
 </script>

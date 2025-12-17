@@ -1,10 +1,6 @@
 /**
- * Gaming for Good (G4G) Data Collection System
- * Cross-site research operations tracker for NSF-funded project
- *
- * Platform: Google Apps Script + Google Sheets
- * Sites: UGA and University of Missouri
- * Purpose: Track completion of 19 mandatory research instruments per participant
+ * Gaming for Good (G4G) Data Collection System v2.0
+ * Authenticated via Username/Password
  */
 
 // ============================================================================
@@ -24,7 +20,7 @@ const SITES = ['UGA', 'MIZZOU'];
 const ROLES = ['Admin', 'ProjectLead', 'SiteLead', 'Facilitator', 'Viewer'];
 const STATUSES = ['Active', 'Withdrawn', 'Completed'];
 
-// 19 mandatory instruments in exact order
+// 19 mandatory instruments
 const INSTRUMENTS_DATA = [
   { id: 'consent', name: 'Consent form', order: 1 },
   { id: 'assent', name: 'Assent Form', order: 2 },
@@ -48,1141 +44,415 @@ const INSTRUMENTS_DATA = [
 ];
 
 // ============================================================================
-// ENTRY POINT & INITIALIZATION
+// CORE & AUTHENTICATION
 // ============================================================================
 
-/**
- * Entry point for web app
- * Checks authorization and serves appropriate HTML
- */
 function doGet(e) {
-  try {
-    const userEmail = Session.getActiveUser().getEmail();
-    const user = getUserByEmail(userEmail);
-
-    // Check if user is authorized
-    if (!user || !user.active) {
-      return HtmlService.createTemplateFromFile('Unauthorized')
-        .evaluate()
-        .setTitle('G4G Data Collection System')
-        .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-    }
-
-    // Serve main application
-    const template = HtmlService.createTemplateFromFile('Index');
-    template.user = user;
-    template.appName = getConfig('app_name') || 'Gaming4Good Data Collection System';
-
-    return template.evaluate()
-      .setTitle('G4G Data Collection System')
-      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
-
-  } catch (error) {
-    Logger.log('Error in doGet: ' + error.toString());
-    return HtmlService.createHtmlOutput('<h1>Error loading application</h1><p>' + error.toString() + '</p>');
-  }
+  return HtmlService.createTemplateFromFile('Index')
+    .evaluate()
+    .setTitle('G4G Data Collection System')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
-/**
- * Include HTML files (for templates and styles)
- */
 function include(filename) {
   return HtmlService.createHtmlOutputFromFile(filename).getContent();
 }
 
 /**
- * Initialize application - create sheets and seed data
- * Run this once after creating the spreadsheet
+ * Authenticate user and return session token
  */
-function initApp() {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const userEmail = Session.getActiveUser().getEmail();
-
-  Logger.log('Initializing G4G Data Collection System...');
-
-  // Create CONFIG sheet
-  createConfigSheet(ss);
-
-  // Create INSTRUMENTS sheet
-  createInstrumentsSheet(ss);
-
-  // Create PARTICIPANTS sheet
-  createParticipantsSheet(ss);
-
-  // Create COMPLETIONS sheet
-  createCompletionsSheet(ss);
-
-  // Create USERS sheet
-  createUsersSheet(ss, userEmail);
-
-  // Create AUDIT_LOG sheet
-  createAuditLogSheet(ss);
-
-  Logger.log('Initialization complete!');
-
-  return 'Application initialized successfully! Deploy as web app to use.';
-}
-
-/**
- * Create CONFIG sheet with default settings
- */
-function createConfigSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.CONFIG);
-    sheet.appendRow(['key', 'value']);
-    sheet.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
-
-    const configs = [
-      ['app_name', 'Gaming4Good Data Collection System'],
-      ['version', '1.0'],
-      ['sites', SITES.join(',')],
-      ['participant_id_format', '{SITE}-{NUMBER}']
-    ];
-
-    configs.forEach(config => sheet.appendRow(config));
-
-    Logger.log('Created CONFIG sheet');
-  }
-}
-
-/**
- * Create INSTRUMENTS sheet with 19 mandatory items
- */
-function createInstrumentsSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAMES.INSTRUMENTS);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.INSTRUMENTS);
-    sheet.appendRow(['instrument_id', 'instrument_name', 'sort_order', 'default_url', 'active']);
-    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
-
-    INSTRUMENTS_DATA.forEach(inst => {
-      sheet.appendRow([
-        inst.id,
-        inst.name,
-        inst.order,
-        '', // default_url - to be filled by admins
-        true
-      ]);
-    });
-
-    sheet.setFrozenRows(1);
-    Logger.log('Created INSTRUMENTS sheet with 19 items');
-  }
-}
-
-/**
- * Create PARTICIPANTS sheet
- */
-function createParticipantsSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.PARTICIPANTS);
-    const headers = [
-      'participant_id', 'site', 'cohort', 'enroll_date', 'created_by',
-      'participant_name', 'status', 'notes', 'completion_percent',
-      'missing_count', 'last_updated'
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
-    sheet.setFrozenRows(1);
-
-    Logger.log('Created PARTICIPANTS sheet');
-  }
-}
-
-/**
- * Create COMPLETIONS sheet (normalized)
- */
-function createCompletionsSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.COMPLETIONS);
-    const headers = [
-      'participant_id', 'instrument_id', 'instrument_name', 'is_complete',
-      'completed_at', 'completed_by', 'response_ref', 'link', 'notes'
-    ];
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
-    sheet.setFrozenRows(1);
-
-    Logger.log('Created COMPLETIONS sheet');
-  }
-}
-
-/**
- * Create USERS sheet and add script owner as Admin
- */
-function createUsersSheet(ss, ownerEmail) {
-  let sheet = ss.getSheetByName(SHEET_NAMES.USERS);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.USERS);
-    sheet.appendRow(['email', 'role', 'site_scope', 'active']);
-    sheet.getRange(1, 1, 1, 4).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
-
-    // Add script owner as Admin
-    sheet.appendRow([ownerEmail, 'Admin', 'ALL', true]);
-
-    sheet.setFrozenRows(1);
-    Logger.log('Created USERS sheet and added ' + ownerEmail + ' as Admin');
-  }
-}
-
-/**
- * Create AUDIT_LOG sheet
- */
-function createAuditLogSheet(ss) {
-  let sheet = ss.getSheetByName(SHEET_NAMES.AUDIT_LOG);
-
-  if (!sheet) {
-    sheet = ss.insertSheet(SHEET_NAMES.AUDIT_LOG);
-    const headers = ['timestamp', 'user_email', 'action', 'participant_id', 'instrument_id', 'details_json'];
-    sheet.appendRow(headers);
-    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
-    sheet.setFrozenRows(1);
-
-    Logger.log('Created AUDIT_LOG sheet');
-  }
-}
-
-// ============================================================================
-// AUTHENTICATION & AUTHORIZATION
-// ============================================================================
-
-/**
- * Get current user information
- */
-function getCurrentUser() {
-  const email = Session.getActiveUser().getEmail();
-  return getUserByEmail(email);
-}
-
-/**
- * Get user by email from USERS sheet
- */
-function getUserByEmail(email) {
-  const cache = CacheService.getScriptCache();
-  const cacheKey = 'user_' + email;
-  const cached = cache.get(cacheKey);
-
-  if (cached) {
-    return JSON.parse(cached);
-  }
-
+function login(username, password) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
   const data = sheet.getDataRange().getValues();
 
   for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === email && data[i][3] === true) {
+    // Check credentials (simple text match for prototype - use hashing in production)
+    if (data[i][0] == username && data[i][1] == password && data[i][4] === true) {
       const user = {
-        email: data[i][0],
-        role: data[i][1],
-        site_scope: data[i][2],
-        active: data[i][3]
+        username: data[i][0],
+        role: data[i][2],
+        site_scope: data[i][3],
+        can_admin: data[i][2] === 'Admin' || data[i][2] === 'ProjectLead',
+        can_enroll: ['Admin', 'ProjectLead', 'SiteLead', 'Facilitator'].includes(data[i][2]),
+        can_view_names: ['Admin', 'ProjectLead', 'SiteLead'].includes(data[i][2])
       };
-
-      cache.put(cacheKey, JSON.stringify(user), 300); // Cache for 5 minutes
-      return user;
+      
+      // Generate Token
+      const token = Utilities.getUuid();
+      CacheService.getScriptCache().put(token, JSON.stringify(user), 21600); // 6 hours
+      
+      return { success: true, token: token, user: user };
     }
   }
-
-  return null;
+  
+  throw new Error('Invalid username or password');
 }
 
 /**
- * Check if user can access a specific site
+ * Verify token and retrieve user object
  */
+function getUserFromToken(token) {
+  if (!token) throw new Error('Session invalid. Please login again.');
+  const userJson = CacheService.getScriptCache().get(token);
+  if (!userJson) throw new Error('Session expired. Please login again.');
+  return JSON.parse(userJson);
+}
+
+// ============================================================================
+// INITIALIZATION
+// ============================================================================
+
+function initApp() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  createConfigSheet(ss);
+  createInstrumentsSheet(ss);
+  createParticipantsSheet(ss);
+  createCompletionsSheet(ss);
+  createUsersSheet(ss);
+  createAuditLogSheet(ss);
+  
+  return 'System Initialized. Default Admin: admin / g4g2024';
+}
+
+function createUsersSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.USERS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.USERS);
+    // New Structure: Username, Password, Role, Site, Active
+    sheet.appendRow(['username', 'password', 'role', 'site_scope', 'active']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
+    // Default Admin
+    sheet.appendRow(['admin', 'g4g2024', 'Admin', 'ALL', true]);
+    sheet.setFrozenRows(1);
+  }
+}
+
+// Helper functions for other sheets (Config, Instruments, etc.) remain mostly same
+function createConfigSheet(ss) { /* ... same as before ... */ 
+  let sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.CONFIG);
+    sheet.appendRow(['key', 'value']);
+    sheet.getRange(1, 1, 1, 2).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
+    const configs = [['app_name', 'G4G Data Hub'], ['version', '2.0']];
+    configs.forEach(c => sheet.appendRow(c));
+  }
+}
+function createInstrumentsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.INSTRUMENTS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.INSTRUMENTS);
+    sheet.appendRow(['instrument_id', 'instrument_name', 'sort_order', 'default_url', 'active']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
+    INSTRUMENTS_DATA.forEach(inst => sheet.appendRow([inst.id, inst.name, inst.order, '', true]));
+  }
+}
+function createParticipantsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.PARTICIPANTS);
+    // Added created_by_username
+    const headers = ['participant_id', 'site', 'cohort', 'enroll_date', 'created_by', 'participant_name', 'status', 'notes', 'completion_percent', 'missing_count', 'last_updated'];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
+  }
+}
+function createCompletionsSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.COMPLETIONS);
+    const headers = ['participant_id', 'instrument_id', 'instrument_name', 'is_complete', 'completed_at', 'completed_by', 'response_ref', 'link', 'notes'];
+    sheet.appendRow(headers);
+    sheet.getRange(1, 1, 1, headers.length).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
+  }
+}
+function createAuditLogSheet(ss) {
+  let sheet = ss.getSheetByName(SHEET_NAMES.AUDIT_LOG);
+  if (!sheet) {
+    sheet = ss.insertSheet(SHEET_NAMES.AUDIT_LOG);
+    sheet.appendRow(['timestamp', 'username', 'action', 'target_id', 'details']);
+    sheet.getRange(1, 1, 1, 5).setFontWeight('bold').setBackground('#4285f4').setFontColor('#ffffff');
+  }
+}
+
+// ============================================================================
+// DATA ACCESS & LOGIC
+// ============================================================================
+
 function canAccessSite(user, site) {
-  if (!user) return false;
-  if (user.site_scope === 'ALL') return true;
-  return user.site_scope === site;
+  return user.site_scope === 'ALL' || user.site_scope === site;
 }
 
-/**
- * Check if user can view participant names (PII)
- */
-function canViewNames(user) {
-  if (!user) return false;
-  return ['Admin', 'ProjectLead', 'SiteLead'].includes(user.role);
-}
+// --- DASHBOARD ---
+function getDashboardStats(token, filters) {
+  const user = getUserFromToken(token); // Verify Auth
+  const participants = getParticipantsLogic(user, filters);
 
-/**
- * Check if user can manage users
- */
-function canManageUsers(user) {
-  if (!user) return false;
-  return user.role === 'Admin';
-}
-
-/**
- * Check if user can create participants
- */
-function canCreateParticipants(user) {
-  if (!user) return false;
-  return ['Admin', 'ProjectLead', 'SiteLead', 'Facilitator'].includes(user.role);
-}
-
-/**
- * Check if user can edit completions
- */
-function canEditCompletions(user) {
-  if (!user) return false;
-  return ['Admin', 'ProjectLead', 'SiteLead', 'Facilitator'].includes(user.role);
-}
-
-// ============================================================================
-// CONFIGURATION FUNCTIONS
-// ============================================================================
-
-/**
- * Get configuration value
- */
-function getConfig(key) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
-  const data = sheet.getDataRange().getValues();
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === key) {
-      return data[i][1];
-    }
-  }
-
-  return null;
-}
-
-/**
- * Set configuration value
- */
-function setConfig(key, value) {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.CONFIG);
-  const data = sheet.getDataRange().getValues();
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === key) {
-      sheet.getRange(i + 1, 2).setValue(value);
-      return true;
-    }
-  }
-
-  // Key not found, append new row
-  sheet.appendRow([key, value]);
-  return true;
-}
-
-// ============================================================================
-// INSTRUMENT FUNCTIONS
-// ============================================================================
-
-/**
- * Get all active instruments (cached)
- */
-function getInstruments() {
-  const cache = CacheService.getScriptCache();
-  const cached = cache.get('instruments');
-
-  if (cached) {
-    return JSON.parse(cached);
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.INSTRUMENTS);
-  const data = sheet.getDataRange().getValues();
-
-  const instruments = [];
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][4] === true) { // active only
-      instruments.push({
-        instrument_id: data[i][0],
-        instrument_name: data[i][1],
-        sort_order: data[i][2],
-        default_url: data[i][3],
-        active: data[i][4]
-      });
-    }
-  }
-
-  // Sort by sort_order
-  instruments.sort((a, b) => a.sort_order - b.sort_order);
-
-  cache.put('instruments', JSON.stringify(instruments), 600); // Cache for 10 minutes
-  return instruments;
-}
-
-/**
- * Update instrument URLs (Admin only)
- */
-function updateInstrument(instrumentId, defaultUrl) {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.INSTRUMENTS);
-  const data = sheet.getDataRange().getValues();
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === instrumentId) {
-      sheet.getRange(i + 1, 4).setValue(defaultUrl);
-
-      // Clear cache
-      CacheService.getScriptCache().remove('instruments');
-
-      logAudit('UPDATE_INSTRUMENT', {
-        instrument_id: instrumentId,
-        default_url: defaultUrl
-      });
-
-      return true;
-    }
-  }
-
-  return false;
-}
-
-// ============================================================================
-// PARTICIPANT FUNCTIONS
-// ============================================================================
-
-/**
- * Generate unique participant ID
- */
-function generateParticipantId(site) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const data = sheet.getDataRange().getValues();
-
-  // Find highest number for this site
-  let maxNum = 0;
-  const prefix = site + '-';
-
-  for (let i = 1; i < data.length; i++) {
-    const id = data[i][0];
-    if (id && id.toString().startsWith(prefix)) {
-      const num = parseInt(id.toString().replace(prefix, ''));
-      if (!isNaN(num) && num > maxNum) {
-        maxNum = num;
-      }
-    }
-  }
-
-  const nextNum = (maxNum + 1).toString().padStart(3, '0');
-  return prefix + nextNum;
-}
-
-/**
- * Create new participant and completion records
- */
-function createParticipant(data) {
-  const user = getCurrentUser();
-
-  if (!canCreateParticipants(user)) {
-    throw new Error('You do not have permission to create participants');
-  }
-
-  if (!canAccessSite(user, data.site)) {
-    throw new Error('You cannot create participants for ' + data.site);
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const participantId = generateParticipantId(data.site);
-  const now = new Date();
-
-  // Insert participant record
-  const participantsSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  participantsSheet.appendRow([
-    participantId,
-    data.site,
-    data.cohort || '',
-    now,
-    user.email,
-    data.participant_name || '',
-    'Active',
-    data.notes || '',
-    0, // completion_percent
-    19, // missing_count (all 19 items)
-    now
-  ]);
-
-  // Create 19 completion records
-  const completionsSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-  const instruments = getInstruments();
-
-  const completionRows = instruments.map(inst => [
-    participantId,
-    inst.instrument_id,
-    inst.instrument_name,
-    false, // is_complete
-    '', // completed_at
-    '', // completed_by
-    '', // response_ref
-    inst.default_url || '', // link
-    '' // notes
-  ]);
-
-  if (completionRows.length > 0) {
-    completionsSheet.getRange(
-      completionsSheet.getLastRow() + 1,
-      1,
-      completionRows.length,
-      completionRows[0].length
-    ).setValues(completionRows);
-  }
-
-  logAudit('CREATE_PARTICIPANT', {
-    participant_id: participantId,
-    site: data.site,
-    cohort: data.cohort
-  });
-
-  return participantId;
-}
-
-/**
- * Get participants list with filters
- */
-function getParticipants(filters) {
-  const user = getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const data = sheet.getDataRange().getValues();
-
-  const participants = [];
-  const showNames = canViewNames(user);
-
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    const site = row[1];
-
-    // Check site access
-    if (!canAccessSite(user, site)) continue;
-
-    // Apply filters
-    if (filters) {
-      if (filters.site && filters.site !== 'ALL' && site !== filters.site) continue;
-      if (filters.cohort && row[2] !== filters.cohort) continue;
-      if (filters.status && row[6] !== filters.status) continue;
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        const participantId = (row[0] || '').toString().toLowerCase();
-        if (!participantId.includes(searchLower)) continue;
-      }
-    }
-
-    participants.push({
-      participant_id: row[0],
-      site: row[1],
-      cohort: row[2],
-      enroll_date: row[3],
-      created_by: row[4],
-      participant_name: showNames ? row[5] : '',
-      status: row[6],
-      notes: row[7],
-      completion_percent: row[8],
-      missing_count: row[9],
-      last_updated: row[10]
-    });
-  }
-
-  return participants;
-}
-
-/**
- * Get participant detail with completion checklist
- */
-function getParticipantDetail(participantId) {
-  const user = getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Get participant info
-  const participantsSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const participantData = participantsSheet.getDataRange().getValues();
-
-  let participant = null;
-  for (let i = 1; i < participantData.length; i++) {
-    if (participantData[i][0] === participantId) {
-      const site = participantData[i][1];
-
-      // Check site access
-      if (!canAccessSite(user, site)) {
-        throw new Error('You do not have access to this participant');
-      }
-
-      const showNames = canViewNames(user);
-
-      participant = {
-        participant_id: participantData[i][0],
-        site: participantData[i][1],
-        cohort: participantData[i][2],
-        enroll_date: participantData[i][3],
-        created_by: participantData[i][4],
-        participant_name: showNames ? participantData[i][5] : '',
-        status: participantData[i][6],
-        notes: participantData[i][7],
-        completion_percent: participantData[i][8],
-        missing_count: participantData[i][9],
-        last_updated: participantData[i][10]
-      };
-      break;
-    }
-  }
-
-  if (!participant) {
-    throw new Error('Participant not found');
-  }
-
-  // Get completions
-  const completionsSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-  const completionsData = completionsSheet.getDataRange().getValues();
-
-  const completions = [];
-  for (let i = 1; i < completionsData.length; i++) {
-    if (completionsData[i][0] === participantId) {
-      completions.push({
-        participant_id: completionsData[i][0],
-        instrument_id: completionsData[i][1],
-        instrument_name: completionsData[i][2],
-        is_complete: completionsData[i][3],
-        completed_at: completionsData[i][4],
-        completed_by: completionsData[i][5],
-        response_ref: completionsData[i][6],
-        link: completionsData[i][7],
-        notes: completionsData[i][8]
-      });
-    }
-  }
-
-  // Sort by instrument order
-  const instruments = getInstruments();
-  const instrumentOrder = {};
-  instruments.forEach(inst => {
-    instrumentOrder[inst.instrument_id] = inst.sort_order;
-  });
-
-  completions.sort((a, b) => {
-    return (instrumentOrder[a.instrument_id] || 999) - (instrumentOrder[b.instrument_id] || 999);
-  });
-
-  return {
-    participant: participant,
-    completions: completions
-  };
-}
-
-/**
- * Update completion status
- */
-function updateCompletion(participantId, instrumentId, completionData) {
-  const user = getCurrentUser();
-
-  if (!canEditCompletions(user)) {
-    throw new Error('You do not have permission to edit completions');
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Check site access
-  const participantsSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const participantData = participantsSheet.getDataRange().getValues();
-  let participantSite = null;
-
-  for (let i = 1; i < participantData.length; i++) {
-    if (participantData[i][0] === participantId) {
-      participantSite = participantData[i][1];
-      break;
-    }
-  }
-
-  if (!participantSite || !canAccessSite(user, participantSite)) {
-    throw new Error('You do not have access to this participant');
-  }
-
-  // Update completion record
-  const completionsSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-  const completionsData = completionsSheet.getDataRange().getValues();
-
-  for (let i = 1; i < completionsData.length; i++) {
-    if (completionsData[i][0] === participantId && completionsData[i][1] === instrumentId) {
-      const now = new Date();
-
-      completionsSheet.getRange(i + 1, 4).setValue(completionData.is_complete);
-      completionsSheet.getRange(i + 1, 5).setValue(completionData.is_complete ? now : '');
-      completionsSheet.getRange(i + 1, 6).setValue(completionData.is_complete ? user.email : '');
-      completionsSheet.getRange(i + 1, 7).setValue(completionData.response_ref || '');
-      completionsSheet.getRange(i + 1, 9).setValue(completionData.notes || '');
-
-      break;
-    }
-  }
-
-  // Recalculate completion stats
-  recalculateCompletion(participantId);
-
-  logAudit('UPDATE_COMPLETION', {
-    participant_id: participantId,
-    instrument_id: instrumentId,
-    is_complete: completionData.is_complete
-  });
-
-  return true;
-}
-
-/**
- * Recalculate completion percentage and missing count for a participant
- */
-function recalculateCompletion(participantId) {
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-
-  // Count completions
-  const completionsSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-  const completionsData = completionsSheet.getDataRange().getValues();
-
-  let totalCount = 0;
-  let completedCount = 0;
-
-  for (let i = 1; i < completionsData.length; i++) {
-    if (completionsData[i][0] === participantId) {
-      totalCount++;
-      if (completionsData[i][3] === true) {
-        completedCount++;
-      }
-    }
-  }
-
-  const completionPercent = totalCount > 0 ? Math.round((completedCount / totalCount) * 100) : 0;
-  const missingCount = totalCount - completedCount;
-
-  // Update participant record
-  const participantsSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const participantData = participantsSheet.getDataRange().getValues();
-
-  for (let i = 1; i < participantData.length; i++) {
-    if (participantData[i][0] === participantId) {
-      participantsSheet.getRange(i + 1, 9).setValue(completionPercent);
-      participantsSheet.getRange(i + 1, 10).setValue(missingCount);
-      participantsSheet.getRange(i + 1, 11).setValue(new Date());
-      break;
-    }
-  }
-
-  return { completion_percent: completionPercent, missing_count: missingCount };
-}
-
-/**
- * Recalculate all participants (maintenance task)
- */
-function recalculateAllCompletions() {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const participantsSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const participantData = participantsSheet.getDataRange().getValues();
-
-  let count = 0;
-  for (let i = 1; i < participantData.length; i++) {
-    const participantId = participantData[i][0];
-    recalculateCompletion(participantId);
-    count++;
-  }
-
-  logAudit('RECALCULATE_ALL', { count: count });
-
-  return 'Recalculated ' + count + ' participants';
-}
-
-/**
- * Update participant status
- */
-function updateParticipantStatus(participantId, status, notes) {
-  const user = getCurrentUser();
-
-  if (!canEditCompletions(user)) {
-    throw new Error('Unauthorized');
-  }
-
-  const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const participantsSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
-  const participantData = participantsSheet.getDataRange().getValues();
-
-  for (let i = 1; i < participantData.length; i++) {
-    if (participantData[i][0] === participantId) {
-      const site = participantData[i][1];
-
-      if (!canAccessSite(user, site)) {
-        throw new Error('Unauthorized');
-      }
-
-      participantsSheet.getRange(i + 1, 7).setValue(status);
-      if (notes !== undefined) {
-        participantsSheet.getRange(i + 1, 8).setValue(notes);
-      }
-      participantsSheet.getRange(i + 1, 11).setValue(new Date());
-
-      logAudit('UPDATE_PARTICIPANT_STATUS', {
-        participant_id: participantId,
-        status: status
-      });
-
-      return true;
-    }
-  }
-
-  throw new Error('Participant not found');
-}
-
-// ============================================================================
-// DASHBOARD & STATISTICS
-// ============================================================================
-
-/**
- * Get dashboard statistics
- */
-function getDashboardStats(filters) {
-  const user = getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
-
-  const participants = getParticipants(filters);
-
-  // Calculate statistics
   const totalParticipants = participants.length;
   const fullyComplete = participants.filter(p => p.completion_percent === 100).length;
-  const fullyCompletePercent = totalParticipants > 0 ?
-    Math.round((fullyComplete / totalParticipants) * 100) : 0;
-
+  const fullyCompletePercent = totalParticipants > 0 ? Math.round((fullyComplete / totalParticipants) * 100) : 0;
   const totalCompletion = participants.reduce((sum, p) => sum + (p.completion_percent || 0), 0);
-  const avgCompletion = totalParticipants > 0 ?
-    Math.round(totalCompletion / totalParticipants) : 0;
-
+  const avgCompletion = totalParticipants > 0 ? Math.round(totalCompletion / totalParticipants) : 0;
   const totalMissing = participants.reduce((sum, p) => sum + (p.missing_count || 0), 0);
 
-  // Find top missing instruments
+  // Missing analysis
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const completionsSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-  const completionsData = completionsSheet.getDataRange().getValues();
-
+  const completionsData = ss.getSheetByName(SHEET_NAMES.COMPLETIONS).getDataRange().getValues();
   const participantIds = new Set(participants.map(p => p.participant_id));
   const missingByInstrument = {};
 
   for (let i = 1; i < completionsData.length; i++) {
-    const participantId = completionsData[i][0];
-    const instrumentName = completionsData[i][2];
-    const isComplete = completionsData[i][3];
-
-    if (participantIds.has(participantId) && !isComplete) {
-      missingByInstrument[instrumentName] = (missingByInstrument[instrumentName] || 0) + 1;
+    if (participantIds.has(completionsData[i][0]) && !completionsData[i][3]) {
+      const name = completionsData[i][2];
+      missingByInstrument[name] = (missingByInstrument[name] || 0) + 1;
     }
   }
 
   const topMissing = Object.entries(missingByInstrument)
     .map(([name, count]) => ({ instrument_name: name, missing_count: count }))
-    .sort((a, b) => b.missing_count - a.missing_count)
-    .slice(0, 5);
+    .sort((a, b) => b.missing_count - a.missing_count).slice(0, 5);
 
-  // Get unique cohorts for filter
   const cohorts = [...new Set(participants.map(p => p.cohort).filter(c => c))].sort();
 
   return {
-    stats: {
-      total_participants: totalParticipants,
-      fully_complete: fullyComplete,
-      fully_complete_percent: fullyCompletePercent,
-      avg_completion: avgCompletion,
-      total_missing: totalMissing,
-      top_missing: topMissing
-    },
+    stats: { total_participants: totalParticipants, fully_complete: fullyComplete, fully_complete_percent: fullyCompletePercent, avg_completion: avgCompletion, total_missing: totalMissing, top_missing: topMissing },
     participants: participants,
     cohorts: cohorts,
-    user: {
-      email: user.email,
-      role: user.role,
-      site_scope: user.site_scope,
-      can_view_names: canViewNames(user),
-      can_create: canCreateParticipants(user),
-      can_edit: canEditCompletions(user),
-      can_admin: canManageUsers(user)
-    }
+    user: user
   };
 }
 
-// ============================================================================
-// USER MANAGEMENT
-// ============================================================================
-
-/**
- * Get all users (Admin only)
- */
-function getUsers() {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
-
+function getParticipantsLogic(user, filters) {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
-  const data = sheet.getDataRange().getValues();
+  const data = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS).getDataRange().getValues();
+  const participants = [];
+  const showNames = user.can_view_names;
 
-  const users = [];
   for (let i = 1; i < data.length; i++) {
-    users.push({
-      email: data[i][0],
-      role: data[i][1],
-      site_scope: data[i][2],
-      active: data[i][3]
+    const row = data[i];
+    if (!canAccessSite(user, row[1])) continue;
+    
+    if (filters) {
+      if (filters.site && filters.site !== 'ALL' && row[1] !== filters.site) continue;
+      if (filters.cohort && row[2] !== filters.cohort) continue;
+      if (filters.status && row[6] !== filters.status) continue;
+      if (filters.search) {
+        if (!String(row[0]).toLowerCase().includes(filters.search.toLowerCase())) continue;
+      }
+    }
+
+    participants.push({
+      participant_id: row[0], site: row[1], cohort: row[2], enroll_date: row[3],
+      created_by: row[4], participant_name: showNames ? row[5] : '***',
+      status: row[6], notes: row[7], completion_percent: row[8], missing_count: row[9], last_updated: row[10]
     });
   }
-
-  return users;
+  return participants;
 }
 
-/**
- * Save or update user (Admin only)
- */
-function saveUser(userData) {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
+// --- PARTICIPANT MANAGEMENT ---
+
+function createParticipant(token, data) {
+  const user = getUserFromToken(token);
+  if (!user.can_enroll) throw new Error('Permission denied');
+  if (!canAccessSite(user, data.site)) throw new Error('Site access denied');
+  if (!data.participant_name) throw new Error('Participant Name is required');
 
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
-  const data = sheet.getDataRange().getValues();
-
-  // Check if user exists
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === userData.email) {
-      // Update existing user
-      sheet.getRange(i + 1, 2).setValue(userData.role);
-      sheet.getRange(i + 1, 3).setValue(userData.site_scope);
-      sheet.getRange(i + 1, 4).setValue(userData.active);
-
-      // Clear cache
-      CacheService.getScriptCache().remove('user_' + userData.email);
-
-      logAudit('UPDATE_USER', { email: userData.email, role: userData.role });
-      return true;
+  
+  // Generate ID
+  const pSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
+  const pData = pSheet.getDataRange().getValues();
+  let maxNum = 0;
+  const prefix = data.site + '-';
+  for (let i = 1; i < pData.length; i++) {
+    const id = String(pData[i][0]);
+    if (id.startsWith(prefix)) {
+      const num = parseInt(id.replace(prefix, ''));
+      if (!isNaN(num) && num > maxNum) maxNum = num;
     }
   }
+  const pid = prefix + (maxNum + 1).toString().padStart(3, '0');
+  const now = new Date();
 
-  // Add new user
-  sheet.appendRow([
-    userData.email,
-    userData.role,
-    userData.site_scope,
-    userData.active !== false // default to true
+  pSheet.appendRow([
+    pid, data.site, data.cohort, now, user.username, 
+    data.participant_name, 'Active', data.notes, 0, 19, now
   ]);
 
-  logAudit('CREATE_USER', { email: userData.email, role: userData.role });
+  // Completions
+  const cSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
+  const instruments = getInstruments(); // Helper below
+  const rows = instruments.map(inst => [pid, inst.instrument_id, inst.instrument_name, false, '', '', '', inst.default_url || '', '']);
+  if (rows.length > 0) cSheet.getRange(cSheet.getLastRow()+1, 1, rows.length, rows[0].length).setValues(rows);
+
+  logAudit(user.username, 'CREATE_PARTICIPANT', pid, {site: data.site});
+  return pid;
+}
+
+function getParticipantDetail(token, participantId) {
+  const user = getUserFromToken(token);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const pData = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS).getDataRange().getValues();
+  
+  let p = null;
+  for(let i=1; i<pData.length; i++) {
+    if(pData[i][0] === participantId) {
+      if(!canAccessSite(user, pData[i][1])) throw new Error('Access denied');
+      p = {
+        participant_id: pData[i][0], site: pData[i][1], cohort: pData[i][2],
+        enroll_date: pData[i][3], created_by: pData[i][4],
+        participant_name: user.can_view_names ? pData[i][5] : '***',
+        status: pData[i][6], notes: pData[i][7], completion_percent: pData[i][8],
+        missing_count: pData[i][9], last_updated: pData[i][10]
+      };
+      break;
+    }
+  }
+  if(!p) throw new Error('Participant not found');
+
+  const cData = ss.getSheetByName(SHEET_NAMES.COMPLETIONS).getDataRange().getValues();
+  const completions = [];
+  for(let i=1; i<cData.length; i++) {
+    if(cData[i][0] === participantId) {
+      completions.push({
+        instrument_id: cData[i][1], instrument_name: cData[i][2],
+        is_complete: cData[i][3], completed_at: cData[i][4], completed_by: cData[i][5],
+        response_ref: cData[i][6], link: cData[i][7], notes: cData[i][8]
+      });
+    }
+  }
+  
+  // Sort
+  const instruments = getInstruments();
+  const order = {}; instruments.forEach(i => order[i.instrument_id] = i.sort_order);
+  completions.sort((a,b) => (order[a.instrument_id]||999) - (order[b.instrument_id]||999));
+
+  return { participant: p, completions: completions, user: user };
+}
+
+function updateCompletion(token, participantId, instrumentId, data) {
+  const user = getUserFromToken(token);
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  
+  // Verify access first
+  const pSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
+  const pData = pSheet.getDataRange().getValues();
+  let valid = false;
+  for(let i=1; i<pData.length; i++) {
+    if(pData[i][0] === participantId && canAccessSite(user, pData[i][1])) { valid = true; break; }
+  }
+  if(!valid) throw new Error('Access denied');
+
+  const cSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
+  const cData = cSheet.getDataRange().getValues();
+  for(let i=1; i<cData.length; i++) {
+    if(cData[i][0] === participantId && cData[i][1] === instrumentId) {
+      const row = i+1;
+      const now = new Date();
+      cSheet.getRange(row, 4).setValue(data.is_complete);
+      cSheet.getRange(row, 5).setValue(data.is_complete ? now : '');
+      cSheet.getRange(row, 6).setValue(data.is_complete ? user.username : '');
+      cSheet.getRange(row, 7).setValue(data.response_ref || '');
+      cSheet.getRange(row, 9).setValue(data.notes || '');
+      break;
+    }
+  }
+  recalculateCompletion(participantId);
   return true;
 }
 
-/**
- * Delete user (Admin only)
- */
-function deleteUser(email) {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
-
-  // Prevent deleting self
-  if (email === user.email) {
-    throw new Error('Cannot delete your own account');
-  }
-
+function updateParticipantStatus(token, participantId, status) {
+  const user = getUserFromToken(token);
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
-  const data = sheet.getDataRange().getValues();
-
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][0] === email) {
-      sheet.deleteRow(i + 1);
-      CacheService.getScriptCache().remove('user_' + email);
-      logAudit('DELETE_USER', { email: email });
+  const pSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
+  const data = pSheet.getDataRange().getValues();
+  
+  for(let i=1; i<data.length; i++) {
+    if(data[i][0] === participantId) {
+      if(!canAccessSite(user, data[i][1])) throw new Error('Access denied');
+      pSheet.getRange(i+1, 7).setValue(status);
+      pSheet.getRange(i+1, 11).setValue(new Date());
+      logAudit(user.username, 'UPDATE_STATUS', participantId, {status: status});
       return true;
     }
   }
-
-  return false;
 }
 
-// ============================================================================
-// EXPORT FUNCTIONS
-// ============================================================================
+// --- ADMIN FUNCTIONS ---
 
-/**
- * Export participants to CSV
- */
-function exportParticipants(filters) {
-  const user = getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
-
-  const participants = getParticipants(filters);
-  const showNames = canViewNames(user);
-
-  // Build CSV
-  let csv = 'participant_id,site,cohort,enroll_date,status,completion_percent,missing_count,last_updated';
-  if (showNames) {
-    csv = 'participant_id,site,cohort,enroll_date,participant_name,status,completion_percent,missing_count,last_updated';
-  }
-  csv += '\n';
-
-  participants.forEach(p => {
-    const row = [
-      p.participant_id,
-      p.site,
-      p.cohort,
-      p.enroll_date,
-      showNames ? p.participant_name : null,
-      p.status,
-      p.completion_percent,
-      p.missing_count,
-      p.last_updated
-    ].filter(v => v !== null);
-
-    csv += row.map(v => '"' + (v || '').toString().replace(/"/g, '""') + '"').join(',') + '\n';
-  });
-
-  logAudit('EXPORT_PARTICIPANTS', { count: participants.length });
-
-  return csv;
-}
-
-/**
- * Export completions to CSV
- */
-function exportCompletions(filters) {
-  const user = getCurrentUser();
-  if (!user) throw new Error('Unauthorized');
-
-  const participants = getParticipants(filters);
-  const participantIds = new Set(participants.map(p => p.participant_id));
-
+function getUsers(token) {
+  const user = getUserFromToken(token);
+  if (!user.can_admin) throw new Error('Unauthorized');
+  
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const completionsSheet = ss.getSheetByName(SHEET_NAMES.COMPLETIONS);
-  const completionsData = completionsSheet.getDataRange().getValues();
+  const data = ss.getSheetByName(SHEET_NAMES.USERS).getDataRange().getValues();
+  const users = [];
+  for(let i=1; i<data.length; i++) {
+    users.push({ username: data[i][0], password: data[i][1], role: data[i][2], site_scope: data[i][3], active: data[i][4] });
+  }
+  return users;
+}
 
-  let csv = 'participant_id,instrument_name,is_complete,completed_at,completed_by,response_ref\n';
-
-  for (let i = 1; i < completionsData.length; i++) {
-    const participantId = completionsData[i][0];
-
-    if (participantIds.has(participantId)) {
-      const row = [
-        completionsData[i][0], // participant_id
-        completionsData[i][2], // instrument_name
-        completionsData[i][3] ? 'Yes' : 'No', // is_complete
-        completionsData[i][4], // completed_at
-        completionsData[i][5], // completed_by
-        completionsData[i][6]  // response_ref
-      ];
-
-      csv += row.map(v => '"' + (v || '').toString().replace(/"/g, '""') + '"').join(',') + '\n';
+function saveUser(token, userData) {
+  const user = getUserFromToken(token);
+  if (!user.can_admin) throw new Error('Unauthorized');
+  
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const sheet = ss.getSheetByName(SHEET_NAMES.USERS);
+  const data = sheet.getDataRange().getValues();
+  
+  // Update existing
+  for(let i=1; i<data.length; i++) {
+    if(data[i][0] === userData.username) {
+      sheet.getRange(i+1, 2).setValue(userData.password);
+      sheet.getRange(i+1, 3).setValue(userData.role);
+      sheet.getRange(i+1, 4).setValue(userData.site_scope);
+      sheet.getRange(i+1, 5).setValue(userData.active);
+      return true;
     }
   }
-
-  logAudit('EXPORT_COMPLETIONS', { count: participantIds.size });
-
-  return csv;
+  // Create new
+  sheet.appendRow([userData.username, userData.password, userData.role, userData.site_scope, userData.active]);
+  logAudit(user.username, 'CREATE_USER', userData.username, {});
+  return true;
 }
 
-/**
- * Export single participant checklist
- */
-function exportParticipantChecklist(participantId) {
-  const detail = getParticipantDetail(participantId);
-
-  let csv = 'instrument_name,is_complete,completed_at,completed_by,response_ref,link\n';
-
-  detail.completions.forEach(c => {
-    const row = [
-      c.instrument_name,
-      c.is_complete ? 'Yes' : 'No',
-      c.completed_at,
-      c.completed_by,
-      c.response_ref,
-      c.link
-    ];
-
-    csv += row.map(v => '"' + (v || '').toString().replace(/"/g, '""') + '"').join(',') + '\n';
-  });
-
-  logAudit('EXPORT_PARTICIPANT_CHECKLIST', { participant_id: participantId });
-
-  return csv;
-}
-
-// ============================================================================
-// AUDIT LOG
-// ============================================================================
-
-/**
- * Log audit event
- */
-function logAudit(action, details) {
-  try {
-    const ss = SpreadsheetApp.getActiveSpreadsheet();
-    const sheet = ss.getSheetByName(SHEET_NAMES.AUDIT_LOG);
-    const user = getCurrentUser();
-
-    sheet.appendRow([
-      new Date(),
-      user ? user.email : 'system',
-      action,
-      details.participant_id || '',
-      details.instrument_id || '',
-      JSON.stringify(details)
-    ]);
-  } catch (error) {
-    Logger.log('Error logging audit: ' + error.toString());
-  }
-}
-
-/**
- * Get recent audit logs (Admin only)
- */
-function getAuditLogs(limit) {
-  const user = getCurrentUser();
-  if (!canManageUsers(user)) {
-    throw new Error('Unauthorized');
-  }
-
+// --- HELPERS ---
+function getInstruments() {
   const ss = SpreadsheetApp.getActiveSpreadsheet();
-  const sheet = ss.getSheetByName(SHEET_NAMES.AUDIT_LOG);
-  const data = sheet.getDataRange().getValues();
+  const data = ss.getSheetByName(SHEET_NAMES.INSTRUMENTS).getDataRange().getValues();
+  return data.slice(1).filter(r => r[4]).map(r => ({instrument_id: r[0], instrument_name: r[1], sort_order: r[2], default_url: r[3]}));
+}
 
-  const logs = [];
-  const startRow = Math.max(1, data.length - (limit || 100));
-
-  for (let i = data.length - 1; i >= startRow; i--) {
-    logs.push({
-      timestamp: data[i][0],
-      user_email: data[i][1],
-      action: data[i][2],
-      participant_id: data[i][3],
-      instrument_id: data[i][4],
-      details_json: data[i][5]
-    });
+function recalculateCompletion(participantId) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const cData = ss.getSheetByName(SHEET_NAMES.COMPLETIONS).getDataRange().getValues();
+  let total=0, complete=0;
+  for(let i=1; i<cData.length; i++) {
+    if(cData[i][0] === participantId) {
+      total++;
+      if(cData[i][3]) complete++;
+    }
   }
+  const pct = total ? Math.round((complete/total)*100) : 0;
+  
+  const pSheet = ss.getSheetByName(SHEET_NAMES.PARTICIPANTS);
+  const pData = pSheet.getDataRange().getValues();
+  for(let i=1; i<pData.length; i++) {
+    if(pData[i][0] === participantId) {
+      pSheet.getRange(i+1, 9).setValue(pct);
+      pSheet.getRange(i+1, 10).setValue(total-complete);
+      pSheet.getRange(i+1, 11).setValue(new Date());
+      break;
+    }
+  }
+}
 
-  return logs;
+function logAudit(username, action, target, details) {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  ss.getSheetByName(SHEET_NAMES.AUDIT_LOG).appendRow([new Date(), username, action, target, JSON.stringify(details)]);
 }

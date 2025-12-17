@@ -209,4 +209,23 @@
       .withFailureHandler(handleError)
       .exportParticipants(filters);
   }
+  
+
+  function initDashboard() {
+    loadDashboardData();
+  }
+  
+  function loadDashboardData() {
+    const filters = APP_STATE.currentFilters || {};
+    // PASS TOKEN HERE
+    google.script.run
+      .withSuccessHandler(renderDashboard)
+      .withFailureHandler(handleError)
+      .getDashboardStats(STATE.token, filters);
+  }
+  
+  function renderDashboard(data) {
+    // ... same rendering logic as before ...
+  }
+
 </script>

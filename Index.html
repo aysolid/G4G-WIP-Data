@@ -2,213 +2,171 @@
 <html>
 <head>
   <base target="_top">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>G4G Data Collection System</title>
+  <title>G4G Data Hub</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
   <?!= include('Styles'); ?>
 </head>
 <body>
-  <!-- Header -->
-  <header class="app-header">
-    <div class="container">
-      <h1 class="app-title"><?= appName ?></h1>
-      <div class="user-info">
-        <span class="user-email"><?= user.email ?></span>
-        <span class="user-role"><?= user.role ?></span>
-        <span class="user-site"><?= user.site_scope ?></span>
+
+  <div id="login-view" style="height: 100vh; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #1a73e8 0%, #1557b0 100%);">
+    <div class="card" style="width: 100%; max-width: 400px; text-align: center; padding: 40px;">
+      <h1 style="color: #1a73e8; margin-bottom: 24px;">G4G Data Hub</h1>
+      <form id="login-form">
+        <div class="form-group">
+          <input type="text" id="login-username" class="form-input" placeholder="Username" required style="padding: 12px;">
+        </div>
+        <div class="form-group">
+          <input type="password" id="login-password" class="form-input" placeholder="Password" required style="padding: 12px;">
+        </div>
+        <button type="submit" class="btn btn-primary" style="width: 100%; padding: 12px;" id="btn-login">Login</button>
+        <p id="login-error" class="text-danger mt-2" style="display: none;"></p>
+      </form>
+    </div>
+  </div>
+
+  <div id="app-shell" style="display: none;">
+    <header class="app-header">
+      <div class="container">
+        <h1 class="app-title">G4G Data Hub</h1>
+        <div class="user-info">
+          <span class="user-role" id="header-user"></span>
+          <span class="user-site" id="header-site"></span>
+          <button class="btn btn-link" onclick="logout()" style="color: white; text-decoration: underline;">Logout</button>
+        </div>
       </div>
-    </div>
-  </header>
+    </header>
 
-  <!-- Navigation -->
-  <nav class="app-nav">
-    <div class="container">
-      <button class="nav-btn active" data-page="dashboard">Dashboard</button>
-      <button class="nav-btn" data-page="participants">Participants</button>
-      <button class="nav-btn" data-page="enroll">Enroll New</button>
-      <? if (user.role === 'Admin') { ?>
-      <button class="nav-btn" data-page="admin">Admin</button>
-      <? } ?>
-    </div>
-  </nav>
+    <nav class="app-nav">
+      <div class="container">
+        <button class="nav-btn active" data-page="dashboard" onclick="nav('dashboard')">Dashboard</button>
+        <button class="nav-btn" data-page="participants" onclick="nav('participants')">Participants</button>
+        <button class="nav-btn" id="nav-admin" data-page="admin" onclick="nav('admin')" style="display: none;">Admin Portal</button>
+      </div>
+    </nav>
 
-  <!-- Main Content Area -->
-  <main class="app-main">
-    <div class="container" id="content-container">
-      <!-- Content will be loaded here -->
-      <div class="loading">Loading...</div>
-    </div>
-  </main>
+    <main class="app-main">
+      <div class="container" id="content-container">
+        </div>
+    </main>
+  </div>
 
-  <!-- Toast Notification -->
   <div id="toast" class="toast"></div>
 
   <script>
-    // Global state
-    const APP_STATE = {
-      currentPage: 'dashboard',
-      currentFilters: {},
-      user: {
-        email: '<?= user.email ?>',
-        role: '<?= user.role ?>',
-        site_scope: '<?= user.site_scope ?>',
-        can_admin: <?= user.role === 'Admin' ? 'true' : 'false' ?>
-      }
+    // Global State
+    const STATE = {
+      token: null,
+      user: null,
+      refreshInterval: null
     };
 
-    // Navigation handler
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-      btn.addEventListener('click', function() {
-        const page = this.getAttribute('data-page');
-        navigateTo(page);
-      });
+    // --- AUTHENTICATION ---
+    
+    document.getElementById('login-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      const btn = document.getElementById('btn-login');
+      const err = document.getElementById('login-error');
+      
+      btn.disabled = true;
+      btn.textContent = 'Verifying...';
+      err.style.display = 'none';
+
+      const u = document.getElementById('login-username').value;
+      const p = document.getElementById('login-password').value;
+
+      google.script.run
+        .withSuccessHandler(function(res) {
+          if (res.success) {
+            STATE.token = res.token;
+            STATE.user = res.user;
+            initAppUI();
+          }
+        })
+        .withFailureHandler(function(e) {
+          err.textContent = e.message;
+          err.style.display = 'block';
+          btn.disabled = false;
+          btn.textContent = 'Login';
+        })
+        .login(u, p);
     });
 
-    function navigateTo(page, params) {
-      // Update active nav button
-      document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('active');
-        if (btn.getAttribute('data-page') === page) {
-          btn.classList.add('active');
-        }
-      });
+    function initAppUI() {
+      // Hide login, show app
+      document.getElementById('login-view').style.display = 'none';
+      document.getElementById('app-shell').style.display = 'block';
+      
+      // Update Header
+      document.getElementById('header-user').textContent = STATE.user.username + ' (' + STATE.user.role + ')';
+      document.getElementById('header-site').textContent = STATE.user.site_scope;
 
-      APP_STATE.currentPage = page;
+      // Show Admin Portal button if authorized (Admin, Leads, Facilitators need it for Enroll)
+      if (STATE.user.can_enroll || STATE.user.can_admin) {
+        document.getElementById('nav-admin').style.display = 'inline-block';
+      }
 
-      // Load content
+      // Load Dashboard
+      nav('dashboard');
+
+      // Start Real-time Refresh
+      if (STATE.refreshInterval) clearInterval(STATE.refreshInterval);
+      STATE.refreshInterval = setInterval(refreshCurrentView, 30000); // 30 seconds
+    }
+
+    function logout() {
+      STATE.token = null;
+      STATE.user = null;
+      location.reload();
+    }
+
+    // --- NAVIGATION ---
+
+    function nav(page, params) {
+      // Highlight Nav
+      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      const activeBtn = document.querySelector(`.nav-btn[data-page="${page}"]`);
+      if(activeBtn) activeBtn.classList.add('active');
+
       const container = document.getElementById('content-container');
       container.innerHTML = '<div class="loading">Loading...</div>';
 
-      switch(page) {
-        case 'dashboard':
-          loadDashboard(params);
-          break;
-        case 'participants':
-          loadParticipants(params);
-          break;
-        case 'enroll':
-          loadEnroll();
-          break;
-        case 'participant-detail':
-          loadParticipantDetail(params);
-          break;
-        case 'admin':
-          if (APP_STATE.user.can_admin) {
-            loadAdmin();
-          } else {
-            showToast('Access denied', 'error');
-          }
-          break;
-        default:
-          container.innerHTML = '<p>Page not found</p>';
+      const run = google.script.run.withSuccessHandler(html => {
+        container.innerHTML = html;
+        // Init Logic based on page
+        if(page === 'dashboard') initDashboard();
+        if(page === 'participants') initParticipants();
+        if(page === 'participant-detail') initDetail(params);
+        if(page === 'admin') initAdmin();
+      }).withFailureHandler(handleError);
+
+      if (page === 'dashboard') run.include('Dashboard');
+      if (page === 'participants') run.include('Participants');
+      if (page === 'participant-detail') run.include('ParticipantDetail');
+      if (page === 'admin') run.include('Admin');
+    }
+
+    function refreshCurrentView() {
+      const activeBtn = document.querySelector('.nav-btn.active');
+      if (activeBtn) {
+        const page = activeBtn.getAttribute('data-page');
+        if (page === 'dashboard' && typeof loadDashboardData === 'function') loadDashboardData();
+        if (page === 'participants' && typeof loadParticipantsList === 'function') loadParticipantsList();
       }
     }
 
-    // Load Dashboard
-    function loadDashboard(params) {
-      google.script.run
-        .withSuccessHandler(function(html) {
-          document.getElementById('content-container').innerHTML = html;
-          initDashboard(params);
-        })
-        .withFailureHandler(handleError)
-        .include('Dashboard');
+    // --- SHARED UTILS ---
+
+    function handleError(e) {
+      console.error(e);
+      showToast(e.message || 'Error occurred', 'error');
     }
 
-    // Load Participants
-    function loadParticipants(params) {
-      google.script.run
-        .withSuccessHandler(function(html) {
-          document.getElementById('content-container').innerHTML = html;
-          initParticipants(params);
-        })
-        .withFailureHandler(handleError)
-        .include('Participants');
+    function showToast(msg, type) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = 'toast show ' + (type||'info');
+      setTimeout(() => t.className = 'toast', 3000);
     }
-
-    // Load Enroll
-    function loadEnroll() {
-      google.script.run
-        .withSuccessHandler(function(html) {
-          document.getElementById('content-container').innerHTML = html;
-          initEnroll();
-        })
-        .withFailureHandler(handleError)
-        .include('Enroll');
-    }
-
-    // Load Participant Detail
-    function loadParticipantDetail(params) {
-      google.script.run
-        .withSuccessHandler(function(html) {
-          document.getElementById('content-container').innerHTML = html;
-          initParticipantDetail(params.participantId);
-        })
-        .withFailureHandler(handleError)
-        .include('ParticipantDetail');
-    }
-
-    // Load Admin
-    function loadAdmin() {
-      google.script.run
-        .withSuccessHandler(function(html) {
-          document.getElementById('content-container').innerHTML = html;
-          initAdmin();
-        })
-        .withFailureHandler(handleError)
-        .include('Admin');
-    }
-
-    // Toast notification
-    function showToast(message, type) {
-      const toast = document.getElementById('toast');
-      toast.textContent = message;
-      toast.className = 'toast show ' + (type || 'info');
-
-      setTimeout(() => {
-        toast.className = 'toast';
-      }, 3000);
-    }
-
-    // Error handler
-    function handleError(error) {
-      console.error('Error:', error);
-      showToast(error.message || 'An error occurred', 'error');
-    }
-
-    // Download CSV helper
-    function downloadCSV(csvContent, filename) {
-      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-      const link = document.createElement('a');
-      const url = URL.createObjectURL(blob);
-
-      link.setAttribute('href', url);
-      link.setAttribute('download', filename);
-      link.style.visibility = 'hidden';
-
-      document.body.appendChild(link);
-      link.click();
-      document.body.removeChild(link);
-    }
-
-    // Format date helper
-    function formatDate(date) {
-      if (!date) return '';
-      const d = new Date(date);
-      if (isNaN(d.getTime())) return '';
-      return d.toLocaleString();
-    }
-
-    function formatDateShort(date) {
-      if (!date) return '';
-      const d = new Date(date);
-      if (isNaN(d.getTime())) return '';
-      return d.toLocaleDateString();
-    }
-
-    // Initialize on load
-    window.addEventListener('load', function() {
-      navigateTo('dashboard');
-    });
   </script>
 </body>
 </html>
